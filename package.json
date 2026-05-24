@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "analyze:mimit": "bun run scripts/analyze-mimit-data.ts"
+    "analyze:mimit": "bun run scripts/analyze-mimit-data.ts",
+    "query:nearby": "bun run scripts/query-mimit-nearby.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"
