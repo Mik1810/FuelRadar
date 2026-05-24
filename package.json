@@ -1,0 +1,11 @@
+{
+  "name": "fuelradar",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "analyze:mimit": "bun run scripts/analyze-mimit-data.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
