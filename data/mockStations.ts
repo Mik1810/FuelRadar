@@ -1,6 +1,10 @@
 import { GasStation } from "@/context/FuelContext";
+import {
+  fuelRadarDatasetFromGasStations,
+  gasStationsFromFuelRadarDataset,
+} from "@/data/fuelRadarData";
 
-export const MOCK_STATIONS: GasStation[] = [
+const MOCK_GAS_STATIONS: GasStation[] = [
   // === ROMA AREA ===
   {
     id: "r1",
@@ -332,3 +336,12 @@ export const MOCK_STATIONS: GasStation[] = [
     lastUpdated: "2026-05-24T09:15:00Z",
   },
 ];
+
+export const MOCK_FUELRADAR_DATASET = fuelRadarDatasetFromGasStations(
+  MOCK_GAS_STATIONS,
+  "2026-05-24"
+);
+
+export const MOCK_STATIONS: GasStation[] = gasStationsFromFuelRadarDataset(
+  MOCK_FUELRADAR_DATASET
+);

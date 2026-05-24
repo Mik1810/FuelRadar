@@ -52,9 +52,11 @@ function formatTime(iso: string): string {
 
 export function StationCard({ station, rank, isFirst }: StationCardProps) {
   const colors = useColors();
-  const { selectedFuelType, toggleFavorite } = useFuel();
+  const { selectedFuelType, selectedServiceMode, toggleFavorite } = useFuel();
 
   const price = station.prices.find((p) => p.type === selectedFuelType);
+  const displayPrice =
+    selectedServiceMode === "self" ? price?.selfService : price?.served;
   const fuelColor = FUEL_COLORS[selectedFuelType];
 
   const handleFavorite = async () => {
@@ -183,14 +185,14 @@ export function StationCard({ station, rank, isFirst }: StationCardProps) {
               #{rank}
             </Text>
           )}
-          {price && (
+          {displayPrice && (
             <Text
               style={[
                 styles.price,
                 { color: fuelColor, fontFamily: "Inter_700Bold" },
               ]}
             >
-              {price.selfService.toFixed(3)}
+              {displayPrice.toFixed(3)}
             </Text>
           )}
           <Text

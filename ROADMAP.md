@@ -14,6 +14,24 @@ The product priority is simple:
 - keep the MVP small enough to validate the official data source before adding
   backend infrastructure.
 
+## Current Status
+
+The project now uses the `Fuel-Finder` Expo app as the mobile base. The app shell
+has Expo Router tabs, native tab support, Liquid Glass fallback behavior, native
+map components, mock station data, and local favorite state inherited from that
+base.
+
+The data-source work is also partially validated:
+
+- official MIMIT CSV files have been inspected;
+- local data samples live under `data/mimit/` and are ignored by git;
+- analysis and nearby-query scripts exist under `scripts/`;
+- strict same-day `dtComu` filtering was rejected because the daily MIMIT
+  extraction already represents the official dataset for the day.
+
+The next engineering task is to adapt the inherited `FuelContext` away from the
+Replit API fallback and toward FuelRadar's local MIMIT data model.
+
 ## Confirmed Decisions
 
 - Country: Italy only.

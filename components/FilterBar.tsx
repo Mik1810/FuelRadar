@@ -12,7 +12,12 @@ import { useColors } from "@/hooks/useColors";
 const FUEL_TYPES: FuelType[] = ["benzina", "diesel", "metano", "gpl"];
 
 export function FilterBar() {
-  const { selectedFuelType, setSelectedFuelType } = useFuel();
+  const {
+    selectedFuelType,
+    selectedServiceMode,
+    setSelectedFuelType,
+    setSelectedServiceMode,
+  } = useFuel();
   const colors = useColors();
 
   return (
@@ -55,6 +60,60 @@ export function FilterBar() {
           );
         })}
       </ScrollView>
+      <View style={[styles.serviceToggle, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <TouchableOpacity
+          onPress={() => setSelectedServiceMode("self")}
+          style={[
+            styles.serviceButton,
+            selectedServiceMode === "self" && { backgroundColor: colors.primary },
+          ]}
+          activeOpacity={0.75}
+        >
+          <Text
+            style={[
+              styles.serviceText,
+              {
+                color:
+                  selectedServiceMode === "self"
+                    ? "#FFFFFF"
+                    : colors.mutedForeground,
+                fontFamily:
+                  selectedServiceMode === "self"
+                    ? "Inter_600SemiBold"
+                    : "Inter_400Regular",
+              },
+            ]}
+          >
+            Self
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setSelectedServiceMode("served")}
+          style={[
+            styles.serviceButton,
+            selectedServiceMode === "served" && { backgroundColor: colors.primary },
+          ]}
+          activeOpacity={0.75}
+        >
+          <Text
+            style={[
+              styles.serviceText,
+              {
+                color:
+                  selectedServiceMode === "served"
+                    ? "#FFFFFF"
+                    : colors.mutedForeground,
+                fontFamily:
+                  selectedServiceMode === "served"
+                    ? "Inter_600SemiBold"
+                    : "Inter_400Regular",
+              },
+            ]}
+          >
+            Servito
+          </Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -63,6 +122,7 @@ const styles = StyleSheet.create({
   container: {
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 8,
   },
   scrollContent: {
     paddingHorizontal: 16,
@@ -78,5 +138,21 @@ const styles = StyleSheet.create({
   },
   chipText: {
     fontSize: 14,
+  },
+  serviceToggle: {
+    alignSelf: "flex-start",
+    borderRadius: 100,
+    borderWidth: 1,
+    flexDirection: "row",
+    marginHorizontal: 16,
+    padding: 3,
+  },
+  serviceButton: {
+    borderRadius: 100,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  serviceText: {
+    fontSize: 13,
   },
 });

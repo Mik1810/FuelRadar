@@ -1,6 +1,6 @@
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { FUEL_COLORS, FuelType, GasStation } from "@/context/FuelContext";
+import { FUEL_COLORS, FuelType, GasStation, useFuel } from "@/context/FuelContext";
 
 interface MapStationMarkerProps {
   station: GasStation;
@@ -15,10 +15,13 @@ export function MapStationMarker({
   isSelected,
   onPress,
 }: MapStationMarkerProps) {
+  const { selectedServiceMode } = useFuel();
   const price = station.prices.find((p) => p.type === selectedFuelType);
   const fuelColor = FUEL_COLORS[selectedFuelType];
+  const displayPrice =
+    selectedServiceMode === "self" ? price?.selfService : price?.served;
 
-  if (!price) return null;
+  if (!price || !displayPrice) return null;
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
@@ -41,7 +44,7 @@ export function MapStationMarker({
             },
           ]}
         >
-          {price.selfService.toFixed(3)}
+          {displayPrice.toFixed(3)}
         </Text>
       </View>
       <View style={[styles.arrow, { borderTopColor: fuelColor }]} />

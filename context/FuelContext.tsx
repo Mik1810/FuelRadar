@@ -4,12 +4,13 @@ import React, {
   useCallback,
   useContext,
   useEffect,
-  useRef,
   useState,
 } from "react";
-import { MOCK_STATIONS } from "@/data/mockStations";
+import { gasStationsFromFuelRadarDataset, type FuelRadarDataset } from "@/data/fuelRadarData";
+import { SAMPLE_FUELRADAR_DATASET } from "@/data/generated/sampleFuelRadarDataset";
 
 export type FuelType = "benzina" | "diesel" | "metano" | "gpl";
+export type ServiceMode = "self" | "served";
 
 export interface FuelPrice {
   type: FuelType;
@@ -58,6 +59,8 @@ interface FuelContextType {
   stations: GasStation[];
   selectedFuelType: FuelType;
   setSelectedFuelType: (type: FuelType) => void;
+  selectedServiceMode: ServiceMode;
+  setSelectedServiceMode: (mode: ServiceMode) => void;
   toggleFavorite: (id: string) => void;
   filteredStations: GasStation[];
   favoritesStations: GasStation[];
@@ -103,44 +106,6 @@ export function getDistance(
   return R * c;
 }
 
-const DOMAIN = process.env.EXPO_PUBLIC_DOMAIN;
-const API_BASE = DOMAIN ? `https://${DOMAIN}` : "";
-
-async function fetchNearbyStations(
-  lat: number,
-  lng: number,
-  radius: number
-): Promise<{ stations: GasStation[]; cachedAt: string } | null> {
-  try {
-    const url = `${API_BASE}/api/stations/nearby?lat=${lat}&lng=${lng}&radius=${radius}`;
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const data = await res.json();
-    return {
-      stations: data.stations.map((s: any) => ({
-        id: s.id,
-        name: s.name,
-        brand: s.brand,
-        address: s.address,
-        city: s.city,
-        latitude: s.latitude,
-        longitude: s.longitude,
-        prices: s.prices.map((p: any) => ({
-          type: p.type as FuelType,
-          selfService: p.selfService,
-          served: p.served ?? undefined,
-        })),
-        isFavorite: false,
-        lastUpdated: s.lastUpdated,
-        distance: s.distance,
-      })),
-      cachedAt: data.cachedAt,
-    };
-  } catch {
-    return null;
-  }
-}
-
 function mergeFavorites(
   stations: GasStation[],
   favorites: Set<string>
@@ -149,20 +114,16 @@ function mergeFavorites(
 }
 
 export function FuelProvider({ children }: { children: React.ReactNode }) {
-  const [rawStations, setRawStations] = useState<GasStation[]>(MOCK_STATIONS);
+  const [dataset, setDataset] = useState<FuelRadarDataset>(SAMPLE_FUELRADAR_DATASET);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [selectedFuelType, setSelectedFuelType] = useState<FuelType>("benzina");
+  const [selectedServiceMode, setSelectedServiceMode] = useState<ServiceMode>("self");
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
     longitude: number;
   } | null>(null);
   const [savedLocations, setSavedLocations] = useState<SavedLocation[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<SavedLocation | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isUsingLiveData, setIsUsingLiveData] = useState(false);
-  const [dataError, setDataError] = useState<string | null>(null);
-  const [cachedAt, setCachedAt] = useState<string | null>(null);
-  const fetchRef = useRef(0);
 
   useEffect(() => {
     const load = async () => {
@@ -184,32 +145,9 @@ export function FuelProvider({ children }: { children: React.ReactNode }) {
     ? { latitude: selectedLocation.latitude, longitude: selectedLocation.longitude }
     : userLocation;
 
-  const loadLiveData = useCallback(async () => {
-    if (!mapCenter) return;
-    const token = ++fetchRef.current;
-    setIsLoading(true);
-    setDataError(null);
-    const result = await fetchNearbyStations(
-      mapCenter.latitude,
-      mapCenter.longitude,
-      RADIUS_KM
-    );
-    if (token !== fetchRef.current) return;
-    if (result && result.stations.length > 0) {
-      setRawStations(result.stations);
-      setIsUsingLiveData(true);
-      setCachedAt(result.cachedAt);
-      setDataError(null);
-    } else {
-      setDataError("Dati live non disponibili, uso dati di esempio");
-      setIsUsingLiveData(false);
-    }
-    setIsLoading(false);
-  }, [mapCenter?.latitude, mapCenter?.longitude]);
-
-  useEffect(() => {
-    loadLiveData();
-  }, [loadLiveData]);
+  const refreshLocalData = useCallback(() => {
+    setDataset(SAMPLE_FUELRADAR_DATASET);
+  }, []);
 
   const toggleFavorite = useCallback(async (id: string) => {
     setFavorites((prev) => {
@@ -243,7 +181,7 @@ export function FuelProvider({ children }: { children: React.ReactNode }) {
     setSelectedLocation((cur) => (cur?.id === id ? null : cur));
   }, []);
 
-  const stations = mergeFavorites(rawStations, favorites);
+  const stations = mergeFavorites(gasStationsFromFuelRadarDataset(dataset), favorites);
 
   const stationsWithDistance = stations.map((s) => {
     if (mapCenter) {
@@ -261,12 +199,26 @@ export function FuelProvider({ children }: { children: React.ReactNode }) {
   });
 
   const filteredStations = stationsWithDistance
-    .filter((s) => s.prices.some((p) => p.type === selectedFuelType))
+    .filter((s) =>
+      s.prices.some(
+        (p) =>
+          p.type === selectedFuelType &&
+          (selectedServiceMode === "self"
+            ? Number.isFinite(p.selfService)
+            : Number.isFinite(p.served))
+      )
+    )
     .sort((a, b) => {
+      const selectedPriceA = a.prices.find((p) => p.type === selectedFuelType);
+      const selectedPriceB = b.prices.find((p) => p.type === selectedFuelType);
       const priceA =
-        a.prices.find((p) => p.type === selectedFuelType)?.selfService ?? 999;
+        selectedServiceMode === "self"
+          ? selectedPriceA?.selfService ?? 999
+          : selectedPriceA?.served ?? 999;
       const priceB =
-        b.prices.find((p) => p.type === selectedFuelType)?.selfService ?? 999;
+        selectedServiceMode === "self"
+          ? selectedPriceB?.selfService ?? 999
+          : selectedPriceB?.served ?? 999;
       return priceA - priceB;
     });
 
@@ -278,6 +230,8 @@ export function FuelProvider({ children }: { children: React.ReactNode }) {
         stations: stationsWithDistance,
         selectedFuelType,
         setSelectedFuelType,
+        selectedServiceMode,
+        setSelectedServiceMode,
         toggleFavorite,
         filteredStations,
         favoritesStations,
@@ -289,11 +243,11 @@ export function FuelProvider({ children }: { children: React.ReactNode }) {
         addSavedLocation,
         removeSavedLocation,
         mapCenter,
-        isLoading,
-        isUsingLiveData,
-        dataError,
-        refetch: loadLiveData,
-        cachedAt,
+        isLoading: false,
+        isUsingLiveData: false,
+        dataError: null,
+        refetch: refreshLocalData,
+        cachedAt: dataset.extractionDate,
       }}
     >
       {children}

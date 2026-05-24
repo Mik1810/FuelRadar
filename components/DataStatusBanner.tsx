@@ -27,7 +27,7 @@ export function DataStatusBanner() {
       <View style={[styles.banner, { backgroundColor: colors.secondary }]}>
         <ActivityIndicator size="small" color={colors.primary} />
         <Text style={[styles.text, { color: colors.mutedForeground, fontFamily: "Inter_400Regular" }]}>
-          Caricamento dati MIMIT...
+          Caricamento dati...
         </Text>
       </View>
     );
@@ -47,15 +47,32 @@ export function DataStatusBanner() {
     );
   }
 
-  if (isUsingLiveData && cachedAt) {
+  if (cachedAt) {
     return (
-      <View style={[styles.banner, { backgroundColor: "#DCFCE7" }]}>
-        <Ionicons name="checkmark-circle" size={14} color="#16A34A" />
-        <Text style={[styles.text, { color: "#14532D", fontFamily: "Inter_400Regular" }]} numberOfLines={1}>
-          Dati MIMIT aggiornati al {formatCachedAt(cachedAt)}
+      <View style={[styles.banner, { backgroundColor: isUsingLiveData ? "#DCFCE7" : colors.secondary }]}>
+        <Ionicons
+          name={isUsingLiveData ? "checkmark-circle" : "information-circle-outline"}
+          size={14}
+          color={isUsingLiveData ? "#16A34A" : colors.mutedForeground}
+        />
+        <Text
+          style={[
+            styles.text,
+            {
+              color: isUsingLiveData ? "#14532D" : colors.mutedForeground,
+              fontFamily: "Inter_400Regular",
+            },
+          ]}
+          numberOfLines={1}
+        >
+          Dati locali di esempio, aggiornati al {formatCachedAt(cachedAt)}
         </Text>
         <TouchableOpacity onPress={refetch} hitSlop={8}>
-          <Ionicons name="refresh-outline" size={16} color="#16A34A" />
+          <Ionicons
+            name="refresh-outline"
+            size={16}
+            color={isUsingLiveData ? "#16A34A" : colors.mutedForeground}
+          />
         </TouchableOpacity>
       </View>
     );

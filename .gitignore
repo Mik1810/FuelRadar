@@ -1,4 +1,5 @@
 .expo/
 Fuel-Finder/
 node_modules/
+node_modules
 data/mimit/*.csv
