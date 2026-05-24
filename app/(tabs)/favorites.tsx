@@ -1,0 +1,150 @@
+import { Ionicons } from "@expo/vector-icons";
+import React, { useState } from "react";
+import {
+  FlatList,
+  Platform,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { DataStatusBanner } from "@/components/DataStatusBanner";
+import { FilterBar } from "@/components/FilterBar";
+import { LocationPicker } from "@/components/LocationPicker";
+import { StationCard } from "@/components/StationCard";
+import { useFuel } from "@/context/FuelContext";
+import { useColors } from "@/hooks/useColors";
+
+export default function FavoritesScreen() {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const { favoritesStations } = useFuel();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const topPadding = Platform.OS === "web" ? 67 : insets.top;
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 1200);
+  };
+
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop: topPadding + 10,
+            backgroundColor: colors.background,
+            borderBottomColor: colors.border,
+          },
+        ]}
+      >
+        <LocationPicker />
+        <FilterBar />
+        <DataStatusBanner />
+      </View>
+
+      <FlatList
+        data={favoritesStations}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item, index }) => (
+          <StationCard station={item} rank={index + 1} isFirst={index === 0} />
+        )}
+        contentContainerStyle={[
+          styles.list,
+          { paddingBottom: insets.bottom + 90 },
+        ]}
+        scrollEnabled={!!favoritesStations.length}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+          />
+        }
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <Ionicons
+              name="heart-outline"
+              size={56}
+              color={colors.mutedForeground}
+            />
+            <Text
+              style={[
+                styles.emptyTitle,
+                { color: colors.foreground, fontFamily: "Inter_600SemiBold" },
+              ]}
+            >
+              Nessun preferito
+            </Text>
+            <Text
+              style={[
+                styles.emptySubtitle,
+                {
+                  color: colors.mutedForeground,
+                  fontFamily: "Inter_400Regular",
+                },
+              ]}
+            >
+              Tocca il cuore su un distributore nella lista per aggiungerlo ai
+              preferiti
+            </Text>
+          </View>
+        }
+        ListHeaderComponent={
+          favoritesStations.length > 0 ? (
+            <Text
+              style={[
+                styles.resultCount,
+                {
+                  color: colors.mutedForeground,
+                  fontFamily: "Inter_400Regular",
+                },
+              ]}
+            >
+              {favoritesStations.length} preferiti
+            </Text>
+          ) : null
+        }
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  header: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingBottom: 4,
+  },
+  list: {
+    paddingTop: 8,
+  },
+  resultCount: {
+    fontSize: 13,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  empty: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingTop: 80,
+    paddingHorizontal: 32,
+    gap: 12,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    textAlign: "center",
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 22,
+  },
+});

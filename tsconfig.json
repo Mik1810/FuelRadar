@@ -1,11 +1,24 @@
 {
+  "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
+    "baseUrl": ".",
     "strict": true,
-    "types": ["bun-types"],
-    "skipLibCheck": true
+    "paths": {
+      "@/*": ["./*"]
+    }
   },
-  "include": ["scripts/**/*.ts"]
+  "include": [
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "components/**/*.ts",
+    "components/**/*.tsx",
+    "constants/**/*.ts",
+    "context/**/*.ts",
+    "context/**/*.tsx",
+    "data/**/*.ts",
+    "hooks/**/*.ts",
+    "scripts/**/*.ts",
+    "types/**/*.d.ts"
+  ],
+  "exclude": ["Fuel-Finder", "node_modules", ".expo"]
 }

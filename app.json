@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "FuelRadar",
+    "slug": "fuelradar",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./logo/logo.png",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.fuelradar.app"
+    },
+    "android": {
+      "package": "com.fuelradar.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0A12",
+        "foregroundImage": "./logo/logo.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router"
+    ]
+  }
+}
