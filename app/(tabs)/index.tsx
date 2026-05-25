@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useIsFocused } from "@react-navigation/native";
 import * as Location from "expo-location";
 import * as Haptics from "expo-haptics";
 import React, { useEffect, useRef, useState } from "react";
@@ -19,12 +20,25 @@ import { LocationPicker } from "@/components/LocationPicker";
 import { GasStation, useFuel } from "@/context/FuelContext";
 import { useColors } from "@/hooks/useColors";
 
+const FOCUSED_STATION_LATITUDE_DELTA = 0.022;
+const FOCUSED_STATION_LONGITUDE_DELTA = 0.022;
+
+function getFocusedStationRegion(station: GasStation) {
+  return {
+    latitude: station.latitude - FOCUSED_STATION_LATITUDE_DELTA * 0.28,
+    longitude: station.longitude,
+    latitudeDelta: FOCUSED_STATION_LATITUDE_DELTA,
+    longitudeDelta: FOCUSED_STATION_LONGITUDE_DELTA,
+  };
+}
+
 export default function MapScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const mapRef = useRef<any>(null);
+  const isFocused = useIsFocused();
 
   const {
     stations,
@@ -32,14 +46,19 @@ export default function MapScreen() {
     userLocation,
     setUserLocation,
     selectedLocation,
+    setSelectedLocation,
     mapCenter,
+    setVisibleMapCenter,
+    focusedStationId,
+    setFocusedStationId,
   } = useFuel();
   const [selectedStation, setSelectedStation] = useState<GasStation | null>(null);
   const [locationLoading, setLocationLoading] = useState(false);
   const [locationDenied, setLocationDenied] = useState(false);
+  const [topBarHeight, setTopBarHeight] = useState(0);
 
   useEffect(() => {
-    if (mapCenter && mapRef.current) {
+    if (isFocused && mapCenter && mapRef.current) {
       mapRef.current?.animateToRegion({
         latitude: mapCenter.latitude,
         longitude: mapCenter.longitude,
@@ -47,7 +66,32 @@ export default function MapScreen() {
         longitudeDelta: 0.12,
       });
     }
-  }, [mapCenter]);
+  }, [isFocused, mapCenter]);
+
+  useEffect(() => {
+    if (!isFocused || !focusedStationId) return;
+
+    const station = stations.find((item) => item.id === focusedStationId);
+    if (!station) return;
+
+    const region = getFocusedStationRegion(station);
+    setSelectedStation(station);
+    mapRef.current?.animateToRegion(region);
+    setVisibleMapCenter({
+      latitude: region.latitude,
+      longitude: region.longitude,
+    });
+    setFocusedStationId(null);
+  }, [focusedStationId, isFocused, setFocusedStationId, setVisibleMapCenter, stations]);
+
+  useEffect(() => {
+    if (!selectedStation) return;
+
+    const updatedStation = stations.find((item) => item.id === selectedStation.id);
+    if (updatedStation && updatedStation.isFavorite !== selectedStation.isFavorite) {
+      setSelectedStation(updatedStation);
+    }
+  }, [selectedStation, stations]);
 
   const requestLocation = async () => {
     setLocationLoading(true);
@@ -61,6 +105,9 @@ export default function MapScreen() {
                 longitude: pos.coords.longitude,
               };
               setUserLocation(loc);
+              setSelectedLocation(null);
+              setSelectedStation(null);
+              setVisibleMapCenter(loc);
               mapRef.current?.animateToRegion({
                 ...loc,
                 latitudeDelta: 0.05,
@@ -91,6 +138,9 @@ export default function MapScreen() {
           longitude: loc.coords.longitude,
         };
         setUserLocation(position);
+        setSelectedLocation(null);
+        setSelectedStation(null);
+        setVisibleMapCenter(position);
         mapRef.current?.animateToRegion({
           ...position,
           latitudeDelta: 0.07,
@@ -105,7 +155,10 @@ export default function MapScreen() {
 
   const centerOnUser = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (userLocation && !selectedLocation) {
+    if (userLocation) {
+      setSelectedLocation(null);
+      setSelectedStation(null);
+      setVisibleMapCenter(userLocation);
       mapRef.current?.animateToRegion({
         ...userLocation,
         latitudeDelta: 0.07,
@@ -120,17 +173,21 @@ export default function MapScreen() {
 
   return (
     <View style={styles.container}>
-      <NativeMap
-        mapRef={mapRef}
-        stations={stations}
-        selectedFuelType={selectedFuelType}
-        selectedStation={selectedStation}
-        onSelectStation={setSelectedStation}
-        userLocation={userLocation}
-        isDark={isDark}
-      />
+      <View style={[styles.mapLayer, topBarHeight > 0 && { top: topBarHeight }]}>
+        <NativeMap
+          mapRef={mapRef}
+          stations={stations}
+          selectedFuelType={selectedFuelType}
+          selectedStation={selectedStation}
+          onSelectStation={setSelectedStation}
+          onVisibleCenterChange={setVisibleMapCenter}
+          userLocation={userLocation}
+          isDark={isDark}
+        />
+      </View>
 
       <View
+        onLayout={(event) => setTopBarHeight(event.nativeEvent.layout.height)}
         style={[
           styles.topBar,
           {
@@ -204,11 +261,20 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  mapLayer: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+  },
   topBar: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
+    zIndex: 10,
+    elevation: 10,
   },
   locationRow: {
     paddingHorizontal: 16,

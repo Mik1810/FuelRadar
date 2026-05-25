@@ -20,6 +20,7 @@ interface StationCardProps {
   station: GasStation;
   rank?: number;
   isFirst?: boolean;
+  onPress?: (station: GasStation) => void;
 }
 
 const BRAND_COLORS: Record<string, string> = {
@@ -50,7 +51,7 @@ function formatTime(iso: string): string {
   return date.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
 }
 
-export function StationCard({ station, rank, isFirst }: StationCardProps) {
+export function StationCard({ station, rank, isFirst, onPress }: StationCardProps) {
   const colors = useColors();
   const { selectedFuelType, selectedServiceMode, toggleFavorite } = useFuel();
 
@@ -59,9 +60,16 @@ export function StationCard({ station, rank, isFirst }: StationCardProps) {
     selectedServiceMode === "self" ? price?.selfService : price?.served;
   const fuelColor = FUEL_COLORS[selectedFuelType];
 
+  const handleOpen = () => {
+    onPress?.(station);
+  };
+
   const handleFavorite = async () => {
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    toggleFavorite(station.id);
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } finally {
+      toggleFavorite(station.id);
+    }
   };
 
   const otherFuels = station.prices
@@ -86,7 +94,12 @@ export function StationCard({ station, rank, isFirst }: StationCardProps) {
       )}
 
       <View style={styles.header}>
-        <View style={styles.brandRow}>
+        <TouchableOpacity
+          disabled={!onPress}
+          onPress={handleOpen}
+          activeOpacity={onPress ? 0.82 : 1}
+          style={styles.brandRow}
+        >
           <View
             style={[
               styles.brandBadge,
@@ -122,7 +135,7 @@ export function StationCard({ station, rank, isFirst }: StationCardProps) {
               {station.address}, {station.city}
             </Text>
           </View>
-        </View>
+        </TouchableOpacity>
 
         <TouchableOpacity onPress={handleFavorite} hitSlop={12} style={styles.favoriteBtn}>
           <Ionicons
@@ -133,87 +146,93 @@ export function StationCard({ station, rank, isFirst }: StationCardProps) {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.footer}>
-        <View style={styles.leftSection}>
-          {station.distance !== undefined && (
-            <View style={styles.distanceRow}>
-              <Ionicons
-                name="location-outline"
-                size={12}
-                color={colors.mutedForeground}
-              />
+      <TouchableOpacity
+        disabled={!onPress}
+        onPress={handleOpen}
+        activeOpacity={onPress ? 0.82 : 1}
+      >
+        <View style={styles.footer}>
+          <View style={styles.leftSection}>
+            {station.distance !== undefined && (
+              <View style={styles.distanceRow}>
+                <Ionicons
+                  name="location-outline"
+                  size={12}
+                  color={colors.mutedForeground}
+                />
+                <Text
+                  style={[
+                    styles.distance,
+                    { color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
+                  ]}
+                >
+                  {formatDistance(station.distance)}
+                </Text>
+              </View>
+            )}
+            <View style={styles.otherFuels}>
+              {otherFuels.map((p) => (
+                <View
+                  key={p.type}
+                  style={[
+                    styles.fuelChip,
+                    { backgroundColor: FUEL_COLORS[p.type as FuelType] + "22" },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.fuelChipText,
+                      { color: FUEL_COLORS[p.type as FuelType], fontFamily: "Inter_500Medium" },
+                    ]}
+                  >
+                    {FUEL_LABELS[p.type as FuelType]} {p.selfService.toFixed(3)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.priceBlock}>
+            {rank !== undefined && (
               <Text
                 style={[
-                  styles.distance,
+                  styles.rank,
                   { color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
                 ]}
               >
-                {formatDistance(station.distance)}
+                #{rank}
               </Text>
-            </View>
-          )}
-          <View style={styles.otherFuels}>
-            {otherFuels.map((p) => (
-              <View
-                key={p.type}
+            )}
+            {displayPrice && (
+              <Text
                 style={[
-                  styles.fuelChip,
-                  { backgroundColor: FUEL_COLORS[p.type as FuelType] + "22" },
+                  styles.price,
+                  { color: fuelColor, fontFamily: "Inter_700Bold" },
                 ]}
               >
-                <Text
-                  style={[
-                    styles.fuelChipText,
-                    { color: FUEL_COLORS[p.type as FuelType], fontFamily: "Inter_500Medium" },
-                  ]}
-                >
-                  {FUEL_LABELS[p.type as FuelType]} {p.selfService.toFixed(3)}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.priceBlock}>
-          {rank !== undefined && (
+                {displayPrice.toFixed(3)}
+              </Text>
+            )}
             <Text
               style={[
-                styles.rank,
+                styles.priceUnit,
                 { color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
               ]}
             >
-              #{rank}
+              €/L{selectedFuelType === "metano" ? " (kg)" : ""}
             </Text>
-          )}
-          {displayPrice && (
-            <Text
-              style={[
-                styles.price,
-                { color: fuelColor, fontFamily: "Inter_700Bold" },
-              ]}
-            >
-              {displayPrice.toFixed(3)}
-            </Text>
-          )}
-          <Text
-            style={[
-              styles.priceUnit,
-              { color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
-            ]}
-          >
-            €/L{selectedFuelType === "metano" ? " (kg)" : ""}
-          </Text>
+          </View>
         </View>
-      </View>
 
-      <Text
-        style={[
-          styles.updated,
-          { color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
-        ]}
-      >
-        Aggiornato alle {formatTime(station.lastUpdated)}
-      </Text>
+        <Text
+          style={[
+            styles.updated,
+            { color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
+          ]}
+        >
+          Aggiornato alle {formatTime(station.lastUpdated)}
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 }

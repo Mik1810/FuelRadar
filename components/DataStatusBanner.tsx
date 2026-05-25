@@ -6,12 +6,17 @@ import { useColors } from "@/hooks/useColors";
 
 function formatCachedAt(iso: string): string {
   try {
+    const dateOnlyMatch = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnlyMatch) {
+      const [, year, month, day] = dateOnlyMatch;
+      return `${day}/${month}/${year}`;
+    }
+
     const d = new Date(iso);
     return d.toLocaleDateString("it-IT", {
       day: "2-digit",
       month: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
+      year: "numeric",
     });
   } catch {
     return iso;
@@ -65,7 +70,7 @@ export function DataStatusBanner() {
           ]}
           numberOfLines={1}
         >
-          Dati locali di esempio, aggiornati al {formatCachedAt(cachedAt)}
+          Dati locali SQLite, aggiornati al {formatCachedAt(cachedAt)}
         </Text>
         <TouchableOpacity onPress={refetch} hitSlop={8}>
           <Ionicons

@@ -10,6 +10,7 @@ interface NativeMapProps {
   selectedFuelType: FuelType;
   selectedStation: GasStation | null;
   onSelectStation: (station: GasStation) => void;
+  onVisibleCenterChange: (center: { latitude: number; longitude: number }) => void;
   userLocation: { latitude: number; longitude: number } | null;
   isDark: boolean;
 }

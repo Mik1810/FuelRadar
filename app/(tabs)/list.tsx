@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import React, { useState } from "react";
 import {
   FlatList,
@@ -13,13 +14,13 @@ import { DataStatusBanner } from "@/components/DataStatusBanner";
 import { FilterBar } from "@/components/FilterBar";
 import { LocationPicker } from "@/components/LocationPicker";
 import { StationCard } from "@/components/StationCard";
-import { useFuel } from "@/context/FuelContext";
+import { GasStation, useFuel } from "@/context/FuelContext";
 import { useColors } from "@/hooks/useColors";
 
 export default function ListScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { filteredStations } = useFuel();
+  const { filteredStations, setFocusedStationId, setVisibleMapCenter } = useFuel();
   const [refreshing, setRefreshing] = useState(false);
 
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
@@ -27,6 +28,15 @@ export default function ListScreen() {
   const handleRefresh = () => {
     setRefreshing(true);
     setTimeout(() => setRefreshing(false), 1200);
+  };
+
+  const openStationOnMap = (station: GasStation) => {
+    setVisibleMapCenter({
+      latitude: station.latitude,
+      longitude: station.longitude,
+    });
+    setFocusedStationId(station.id);
+    router.navigate("/");
   };
 
   return (
@@ -41,7 +51,9 @@ export default function ListScreen() {
           },
         ]}
       >
-        <LocationPicker />
+        <View style={styles.locationRow}>
+          <LocationPicker />
+        </View>
         <FilterBar />
         <DataStatusBanner />
       </View>
@@ -50,7 +62,12 @@ export default function ListScreen() {
         data={filteredStations}
         keyExtractor={(item) => item.id}
         renderItem={({ item, index }) => (
-          <StationCard station={item} rank={index + 1} isFirst={index === 0} />
+          <StationCard
+            station={item}
+            rank={index + 1}
+            isFirst={index === 0}
+            onPress={openStationOnMap}
+          />
         )}
         contentContainerStyle={[
           styles.list,

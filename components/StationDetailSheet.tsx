@@ -39,8 +39,11 @@ export function StationDetailSheet({
   if (!station) return null;
 
   const handleFavorite = async () => {
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    toggleFavorite(station.id);
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } finally {
+      toggleFavorite(station.id);
+    }
   };
 
   return (

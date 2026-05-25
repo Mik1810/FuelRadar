@@ -24,6 +24,7 @@ export function FilterBar() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView
         horizontal
+        scrollEnabled={false}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
@@ -60,18 +61,18 @@ export function FilterBar() {
           );
         })}
       </ScrollView>
-      <View style={[styles.serviceToggle, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={[styles.segmentedControl, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <TouchableOpacity
           onPress={() => setSelectedServiceMode("self")}
           style={[
-            styles.serviceButton,
+            styles.segmentButton,
             selectedServiceMode === "self" && { backgroundColor: colors.primary },
           ]}
           activeOpacity={0.75}
         >
           <Text
             style={[
-              styles.serviceText,
+              styles.segmentText,
               {
                 color:
                   selectedServiceMode === "self"
@@ -90,14 +91,14 @@ export function FilterBar() {
         <TouchableOpacity
           onPress={() => setSelectedServiceMode("served")}
           style={[
-            styles.serviceButton,
+            styles.segmentButton,
             selectedServiceMode === "served" && { backgroundColor: colors.primary },
           ]}
           activeOpacity={0.75}
         >
           <Text
             style={[
-              styles.serviceText,
+              styles.segmentText,
               {
                 color:
                   selectedServiceMode === "served"
@@ -139,7 +140,7 @@ const styles = StyleSheet.create({
   chipText: {
     fontSize: 14,
   },
-  serviceToggle: {
+  segmentedControl: {
     alignSelf: "flex-start",
     borderRadius: 100,
     borderWidth: 1,
@@ -147,12 +148,12 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     padding: 3,
   },
-  serviceButton: {
+  segmentButton: {
     borderRadius: 100,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 6,
   },
-  serviceText: {
+  segmentText: {
     fontSize: 13,
   },
 });
