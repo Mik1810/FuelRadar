@@ -1,0 +1,5 @@
+Estrazione del 2026-05-23
+idImpianto|Gestore|Bandiera|Tipo Impianto|Nome Impianto|Indirizzo|Comune|Provincia|Latitudine|Longitudine|Campo Futuro
+100|Gestore Uno|Api-Ip|Stradale|Stazione | Centro|Via Roma 1|ROMA|RM|41.9028|12.4964|ignorato
+200|Gestore Due|Q8|Autostradale|Coordinate errate|Via Milano 2|MILANO|MI|nord|9.19|ignorato
+|Gestore Tre|Esso|Stradale|Senza ID|Via Napoli 3|NAPOLI|NA|40.8518|14.2681|ignorato

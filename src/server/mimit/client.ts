@@ -1,4 +1,6 @@
-export type MimitResourceName = "stations" | "prices";
+import "server-only";
+
+import type { MimitResourceName } from "@/domain/mimit/types";
 
 export type MimitResourceMetadata = {
   name: MimitResourceName;
@@ -10,11 +12,6 @@ export type MimitResourceMetadata = {
   checkedAt: string;
 };
 
-export type MimitDatasetMetadata = {
-  stations: MimitResourceMetadata;
-  prices: MimitResourceMetadata;
-};
-
 export type MimitResourceDownload = {
   name: MimitResourceName;
   url: string;
@@ -22,9 +19,9 @@ export type MimitResourceDownload = {
   downloadedAt: string;
 };
 
-export type MimitDatasetDownload = {
-  stations: MimitResourceDownload;
-  prices: MimitResourceDownload;
+export type MimitDatasetMetadata = {
+  stations: MimitResourceMetadata;
+  prices: MimitResourceMetadata;
 };
 
 export const MIMIT_RESOURCES: Record<MimitResourceName, string> = {
@@ -34,17 +31,15 @@ export const MIMIT_RESOURCES: Record<MimitResourceName, string> = {
 
 function parseContentLength(value: string | null): number | null {
   if (!value) return null;
-
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
 export async function fetchMimitResourceMetadata(
-  name: MimitResourceName
+  name: MimitResourceName,
 ): Promise<MimitResourceMetadata> {
   const url = MIMIT_RESOURCES[name];
-  const response = await fetch(url, { method: "HEAD" });
-
+  const response = await fetch(url, { method: "HEAD", cache: "no-store" });
   if (!response.ok) {
     throw new Error(`Unable to fetch MIMIT ${name} metadata: HTTP ${response.status}`);
   }
@@ -65,16 +60,14 @@ export async function fetchMimitDatasetMetadata(): Promise<MimitDatasetMetadata>
     fetchMimitResourceMetadata("stations"),
     fetchMimitResourceMetadata("prices"),
   ]);
-
   return { stations, prices };
 }
 
 export async function downloadMimitResource(
-  name: MimitResourceName
+  name: MimitResourceName,
 ): Promise<MimitResourceDownload> {
   const url = MIMIT_RESOURCES[name];
-  const response = await fetch(url);
-
+  const response = await fetch(url, { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`Unable to download MIMIT ${name} CSV: HTTP ${response.status}`);
   }
@@ -87,11 +80,13 @@ export async function downloadMimitResource(
   };
 }
 
-export async function downloadMimitDataset(): Promise<MimitDatasetDownload> {
+export async function downloadMimitDataset(): Promise<{
+  stations: MimitResourceDownload;
+  prices: MimitResourceDownload;
+}> {
   const [stations, prices] = await Promise.all([
     downloadMimitResource("stations"),
     downloadMimitResource("prices"),
   ]);
-
   return { stations, prices };
 }
