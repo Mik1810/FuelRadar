@@ -192,6 +192,9 @@ export const importRuns = fuelRadarSchema.table(
   },
   (table) => [
     index("import_runs_started_at_idx").on(table.startedAt),
+    uniqueIndex("import_runs_single_running_idx")
+      .on(table.status)
+      .where(sql`${table.status} = 'running'`),
     check(
       "import_runs_finished_at_check",
       sql`${table.finishedAt} is null or ${table.finishedAt} >= ${table.startedAt}`,

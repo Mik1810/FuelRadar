@@ -404,14 +404,14 @@ async function claimRun(
   sql: postgres.Sql,
   claimedAt: Date,
 ): Promise<ClaimedRun | null> {
-  return (await sql.begin(async (transaction) => {
-    const [lock] = await transaction<{ acquired: boolean }[]>`
-      select pg_try_advisory_xact_lock(hashtextextended(${IMPORT_LOCK_KEY}, 0)) as acquired
-    `;
-    if (!lock?.acquired) return null;
-
-    const staleBefore = new Date(claimedAt.getTime() - RUN_LEASE_MS);
-    await transaction`
+  const staleBefore = new Date(claimedAt.getTime() - RUN_LEASE_MS);
+  const [run] = await sql<{ id: string }[]>`
+    with lock_attempt as materialized (
+      select pg_try_advisory_xact_lock(
+        hashtextextended(${IMPORT_LOCK_KEY}, 0)
+      ) as acquired
+    ),
+    stale_runs as (
       update fuelradar.import_runs
       set status = 'failed',
           finished_at = ${claimedAt},
@@ -424,24 +424,27 @@ async function claimRun(
           )::integer,
           error_message = 'Import lease expired before completion.'
       where status = 'running' and started_at < ${staleBefore}
-    `;
-
-    const [active] = await transaction<{ id: string }[]>`
-      select id
-      from fuelradar.import_runs
-      where status = 'running'
-      limit 1
-    `;
-    if (active) return null;
-
-    const [run] = await transaction<{ id: string }[]>`
-      insert into fuelradar.import_runs (status, started_at)
-      values ('running', ${claimedAt})
+        and (select acquired from lock_attempt)
       returning id
-    `;
-    if (!run) throw new Error("Unable to claim the MIMIT import run.");
-    return { id: run.id, startedAt: claimedAt };
-  })) as ClaimedRun | null;
+    ),
+    claim_gate as materialized (
+      select lock_attempt.acquired
+      from lock_attempt
+      left join stale_runs on true
+      group by lock_attempt.acquired
+    ),
+    claimed_run as (
+      insert into fuelradar.import_runs (status, started_at)
+      select 'running', ${claimedAt}
+      from claim_gate
+      where claim_gate.acquired
+      on conflict (status) where status = 'running' do nothing
+      returning id
+    )
+    select id from claimed_run
+  `;
+
+  return run ? { id: run.id, startedAt: claimedAt } : null;
 }
 
 async function failClaim(input: {

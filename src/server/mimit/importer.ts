@@ -13,6 +13,7 @@ import type {
 
 export const IMPORT_LOCK_KEY = "fuelradar:mimit-import:v1";
 const INSERT_CHUNK_SIZE = 2_000;
+const MAX_DATABASE_INTEGER = 2_147_483_647;
 
 export class MimitImportClaimLostError extends Error {
   constructor() {
@@ -30,7 +31,7 @@ export type MimitImportResult = {
   stationCount: number;
   priceCount: number;
   durationMs: number;
-  reason?: "metadata-unchanged" | "content-unchanged";
+  reason?: "metadata-unchanged" | "content-unchanged" | "already-running";
 };
 
 export type MimitImportDependencies = {
@@ -50,6 +51,13 @@ export type MimitImportDependencies = {
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function boundedDurationMs(startedAtMs: number, finishedAtMs: number): number {
+  return Math.min(
+    MAX_DATABASE_INTEGER,
+    Math.max(0, finishedAtMs - startedAtMs),
+  );
 }
 
 export function getMimitMetadataFingerprint(
@@ -233,7 +241,10 @@ async function finishSkippedRun(input: {
   sourceFingerprint?: string;
 }): Promise<MimitImportResult> {
   const finishedAt = input.now();
-  const durationMs = Math.max(0, finishedAt.getTime() - input.startedAtMs);
+  const durationMs = boundedDurationMs(
+    input.startedAtMs,
+    finishedAt.getTime(),
+  );
   const reason = input.sourceFingerprint
     ? ("content-unchanged" as const)
     : ("metadata-unchanged" as const);
@@ -278,11 +289,37 @@ export async function runMimitImport(
     : await dependencies.sql<{ id: string }[]>`
         insert into fuelradar.import_runs (status, started_at)
         values ('running', ${startedAt})
+        on conflict (status) where status = 'running' do nothing
         returning id
       `;
   const run = createdRun;
 
-  if (!run) throw new Error("Unable to create the MIMIT import run.");
+  if (!run) {
+    const finishedAt = now();
+    const durationMs = boundedDurationMs(
+      startedAt.getTime(),
+      finishedAt.getTime(),
+    );
+    const [skippedRun] = await dependencies.sql<{ id: string }[]>`
+      insert into fuelradar.import_runs (
+        status, started_at, finished_at, duration_ms, error_message
+      ) values (
+        'skipped', ${startedAt}, ${finishedAt}, ${durationMs},
+        'Import skipped because another run is active.'
+      )
+      returning id
+    `;
+    if (!skippedRun) throw new Error("Unable to record the skipped MIMIT import.");
+    return {
+      runId: skippedRun.id,
+      datasetId: null,
+      status: "skipped",
+      stationCount: 0,
+      priceCount: 0,
+      durationMs,
+      reason: "already-running",
+    };
+  }
 
   try {
     const metadata = await dependencies.fetchMetadata();
@@ -416,7 +453,10 @@ export async function runMimitImport(
       `;
 
       const finishedAt = now();
-      const durationMs = Math.max(0, finishedAt.getTime() - startedAt.getTime());
+      const durationMs = boundedDurationMs(
+        startedAt.getTime(),
+        finishedAt.getTime(),
+      );
       const [succeeded] = await transaction<{ id: string }[]>`
         update fuelradar.import_runs
         set status = 'succeeded',
@@ -451,7 +491,10 @@ export async function runMimitImport(
       update fuelradar.import_runs
       set status = 'failed',
           finished_at = ${finishedAt},
-          duration_ms = ${Math.max(0, finishedAt.getTime() - startedAt.getTime())},
+          duration_ms = ${boundedDurationMs(
+            startedAt.getTime(),
+            finishedAt.getTime(),
+          )},
           error_message = ${safeErrorMessage(error)}
       where id = ${run.id}::bigint and status = 'running'
       returning id
