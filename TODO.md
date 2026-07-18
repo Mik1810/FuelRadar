@@ -9,15 +9,15 @@ The ordered backlog lives in GitHub epic #37 and issues #38–#54.
 - Supabase project reuse with isolated `fuelradar` schema and PostGIS enabled.
 - Local environment variables kept outside Git through `.env.local`.
 - Official MIMIT source format and product freshness rule documented.
-
-## In progress
-
 - Canonical FuelRadar domain, pure MIMIT parser, offline fixtures and parser
   diagnostics (#39).
 
+## In progress
+
+- Supabase migration workflow with Drizzle and Zod (#40).
+
 ## Next
 
-- Supabase migration workflow (#40).
 - PostgreSQL/PostGIS schema and nearby-query contract (#41).
 - Atomic MIMIT importer (#42).
 

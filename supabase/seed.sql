@@ -1,0 +1,1 @@
+-- Application fixtures will be added with the PostgreSQL/PostGIS schema in #41.

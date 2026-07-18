@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1784383515232,
+      "tag": "20260718140515_fuelradar_foundation",
+      "breakpoints": true
+    }
+  ]
+}
