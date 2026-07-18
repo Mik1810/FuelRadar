@@ -304,6 +304,40 @@ describe("internal MIMIT import route", () => {
     expect(publicOutput).not.toContain(databaseCause.canary);
   });
 
+  test("returns the pooler circuit reason in the bounded database contract", async () => {
+    const log = collectingLogger();
+    const causeCanary = "pooler-cause-canary";
+    const handler = createMimitImportHandler({
+      getSecret: () => SECRET,
+      runImport: async () => {
+        throw new MimitCronDatabaseUnavailableError(
+          new Error(`Circuit breaker open: password rejected ${causeCanary}`),
+        );
+      },
+      logger: log.logger,
+    });
+
+    const response = await handler(authorizedRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body).toEqual({
+      error: {
+        code: "database_unavailable",
+        message: "Service unavailable",
+        reason: "pooler_circuit_open",
+      },
+    });
+    expect(log.errors).toHaveLength(1);
+    expect(JSON.parse(log.errors[0]!)).toMatchObject({
+      event: "mimit_import_database_unavailable",
+      reason: "pooler_circuit_open",
+    });
+    expect(JSON.stringify({ body, logs: log.errors })).not.toContain(
+      causeCanary,
+    );
+  });
+
   test("returns unavailable without running an import when secret loading fails", async () => {
     const log = collectingLogger();
     const timestamps = [2_000, 2_009];

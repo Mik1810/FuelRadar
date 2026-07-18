@@ -388,6 +388,9 @@ describe("MIMIT database diagnostics", () => {
       ["42501", "permission_denied"],
       ["3D000", "database_not_found"],
       ["ECONNRESET", "connection_reset"],
+      ["ENETUNREACH", "network_unreachable"],
+      ["EHOSTUNREACH", "network_unreachable"],
+      ["UND_ERR_CONNECT_TIMEOUT", "connection_timeout"],
       ["08006", "connection_failure"],
       ["53300", "resource_exhausted"],
       ["57P01", "server_unavailable"],
@@ -461,6 +464,20 @@ describe("MIMIT database diagnostics", () => {
         message: "password authentication failed",
       }),
     ).toBe("connection_failure");
+  });
+
+  test("classifies realistic Supavisor circuit-breaker messages before authentication", () => {
+    const messages = [
+      "(ECIRCUITBREAKER) too many authentication failures, new connections are temporarily blocked",
+      "ECIRCUITBREAKER: too many authentication failures, new connections are temporarily blocked",
+      "Circuit breaker open after password authentication failure",
+    ];
+
+    for (const message of messages) {
+      expect(
+        classifyMimitCronDatabaseError({ code: "XX000", message }),
+      ).toBe("pooler_circuit_open");
+    }
   });
 
   test("allows client initialization to force its dedicated reason", () => {
