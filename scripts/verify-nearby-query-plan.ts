@@ -1,10 +1,10 @@
 import postgres from "postgres";
 
-const LOCAL_DATABASE_URL =
-  process.env.LOCAL_DATABASE_URL ??
-  "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+import { getLocalDatabaseUrl } from "./local-database";
 
-const sql = postgres(LOCAL_DATABASE_URL, {
+const localDatabaseUrl = getLocalDatabaseUrl();
+
+const sql = postgres(localDatabaseUrl, {
   prepare: false,
   max: 1,
   connect_timeout: 10,

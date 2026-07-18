@@ -5,20 +5,11 @@ import type {
   MimitResourceDownload,
 } from "@/domain/mimit/source";
 import { runMimitImport } from "@/server/mimit/importer";
+import { getLocalDatabaseUrl } from "./local-database";
 
-const LOCAL_DATABASE_URL =
-  process.env.LOCAL_DATABASE_URL ??
-  "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
-const parsedUrl = new URL(LOCAL_DATABASE_URL);
+const localDatabaseUrl = getLocalDatabaseUrl();
 
-if (
-  !["127.0.0.1", "localhost"].includes(parsedUrl.hostname) ||
-  parsedUrl.port !== "54322"
-) {
-  throw new Error("Import verification is restricted to Supabase local port 54322.");
-}
-
-const sql = postgres(LOCAL_DATABASE_URL, {
+const sql = postgres(localDatabaseUrl, {
   prepare: false,
   max: 4,
   connect_timeout: 10,
