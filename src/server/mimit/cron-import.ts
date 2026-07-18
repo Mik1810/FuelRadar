@@ -20,6 +20,7 @@ const RUN_LEASE_MS = 15 * 60 * 1_000;
 const MAX_DATABASE_ERROR_CAUSE_DEPTH = 8;
 
 export type MimitCronDatabaseUnavailableReason =
+  | "client_initialization_failed"
   | "authentication_failed"
   | "connection_timeout"
   | "dns_failed"
@@ -27,6 +28,11 @@ export type MimitCronDatabaseUnavailableReason =
   | "permission_denied"
   | "database_not_found"
   | "connection_reset"
+  | "connection_failure"
+  | "resource_exhausted"
+  | "server_unavailable"
+  | "schema_unavailable"
+  | "unsupported_database_feature"
   | "unknown";
 
 const DATABASE_ERROR_REASONS = new Map<
@@ -45,7 +51,10 @@ const DATABASE_ERROR_REASONS = new Map<
   ["ECONNRESET", "connection_reset"],
 ]);
 
-function readErrorField(error: unknown, field: "cause" | "code"): unknown {
+function readErrorField(
+  error: unknown,
+  field: "cause" | "code" | "message",
+): unknown {
   if ((typeof error !== "object" && typeof error !== "function") || !error) {
     return undefined;
   }
@@ -54,6 +63,42 @@ function readErrorField(error: unknown, field: "cause" | "code"): unknown {
   } catch {
     return undefined;
   }
+}
+
+function reasonFromDatabaseCode(
+  rawCode: string,
+): MimitCronDatabaseUnavailableReason | undefined {
+  if (rawCode.length > 64) return undefined;
+  const code = rawCode.toUpperCase();
+  const specificReason = DATABASE_ERROR_REASONS.get(code);
+  if (specificReason) return specificReason;
+
+  if (code === "42P01") return "schema_unavailable";
+  if (code === "42883") return "unsupported_database_feature";
+  if (/^08[A-Z0-9]{3}$/.test(code)) return "connection_failure";
+  if (/^53[A-Z0-9]{3}$/.test(code)) return "resource_exhausted";
+  if (/^(?:57P[A-Z0-9]{2}|58[A-Z0-9]{3})$/.test(code)) {
+    return "server_unavailable";
+  }
+  return undefined;
+}
+
+function reasonFromDatabaseMessage(
+  rawMessage: string,
+): MimitCronDatabaseUnavailableReason | undefined {
+  const message = rawMessage.slice(0, 512).toLowerCase();
+  if (message.includes("connect_timeout") || message.includes("timed out")) {
+    return "connection_timeout";
+  }
+  if (message.includes("enotfound") || message.includes("getaddrinfo")) {
+    return "dns_failed";
+  }
+  if (message.includes("authentication") || message.includes("password")) {
+    return "authentication_failed";
+  }
+  if (message.includes("refused")) return "connection_refused";
+  if (message.includes("reset")) return "connection_reset";
+  return undefined;
 }
 
 export function classifyMimitCronDatabaseError(
@@ -68,7 +113,12 @@ export function classifyMimitCronDatabaseError(
 
     const code = readErrorField(current, "code");
     if (typeof code === "string") {
-      const reason = DATABASE_ERROR_REASONS.get(code.toUpperCase());
+      const reason = reasonFromDatabaseCode(code);
+      if (reason) return reason;
+    }
+    const message = readErrorField(current, "message");
+    if (typeof message === "string") {
+      const reason = reasonFromDatabaseMessage(message);
       if (reason) return reason;
     }
     current = readErrorField(current, "cause");
@@ -87,12 +137,16 @@ export class MimitCronConfigurationError extends Error {
 export class MimitCronDatabaseUnavailableError extends Error {
   readonly reason: MimitCronDatabaseUnavailableReason;
 
-  constructor(cause?: unknown) {
+  constructor(
+    cause?: unknown,
+    reason: MimitCronDatabaseUnavailableReason =
+      classifyMimitCronDatabaseError(cause),
+  ) {
     super("MIMIT cron database is unavailable before the import claim.", {
       cause,
     });
     this.name = "MimitCronDatabaseUnavailableError";
-    this.reason = classifyMimitCronDatabaseError(cause);
+    this.reason = reason;
   }
 }
 

@@ -16,7 +16,10 @@ export async function runServerMimitCronImport(): Promise<MimitCronResult> {
   try {
     ({ sqlClient } = await import("@/server/db/client"));
   } catch (error) {
-    throw new MimitCronDatabaseUnavailableError(error);
+    throw new MimitCronDatabaseUnavailableError(
+      error,
+      "client_initialization_failed",
+    );
   }
 
   return runMimitCronImport({
