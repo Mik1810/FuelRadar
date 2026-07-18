@@ -21,6 +21,7 @@ const MAX_DATABASE_ERROR_NODES = 16;
 
 export type MimitCronDatabaseUnavailableReason =
   | "client_initialization_failed"
+  | "pooler_circuit_open"
   | "authentication_failed"
   | "connection_timeout"
   | "dns_failed"
@@ -28,6 +29,7 @@ export type MimitCronDatabaseUnavailableReason =
   | "permission_denied"
   | "database_not_found"
   | "connection_reset"
+  | "network_unreachable"
   | "connection_failure"
   | "resource_exhausted"
   | "server_unavailable"
@@ -43,12 +45,15 @@ const DATABASE_ERROR_REASONS = new Map<
   ["28000", "authentication_failed"],
   ["ETIMEDOUT", "connection_timeout"],
   ["CONNECT_TIMEOUT", "connection_timeout"],
+  ["UND_ERR_CONNECT_TIMEOUT", "connection_timeout"],
   ["ENOTFOUND", "dns_failed"],
   ["EAI_AGAIN", "dns_failed"],
   ["ECONNREFUSED", "connection_refused"],
   ["42501", "permission_denied"],
   ["3D000", "database_not_found"],
   ["ECONNRESET", "connection_reset"],
+  ["ENETUNREACH", "network_unreachable"],
+  ["EHOSTUNREACH", "network_unreachable"],
 ]);
 
 function readErrorField(
@@ -110,6 +115,12 @@ function reasonFromDatabaseMessage(
   rawMessage: string,
 ): MimitCronDatabaseUnavailableReason | undefined {
   const message = rawMessage.slice(0, 512).toLowerCase();
+  if (
+    message.includes("circuit breaker") ||
+    message.includes("ecircuitbreaker")
+  ) {
+    return "pooler_circuit_open";
+  }
   if (message.includes("connect_timeout") || message.includes("timed out")) {
     return "connection_timeout";
   }
