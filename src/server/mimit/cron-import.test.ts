@@ -480,6 +480,69 @@ describe("MIMIT database diagnostics", () => {
     }
   });
 
+  test("classifies realistic Supavisor tenant and authentication failures", () => {
+    const cases = [
+      ["Tenant or user not found", "pooler_tenant_not_found"],
+      ["Tenant not found for upstream pool", "pooler_tenant_not_found"],
+      [
+        "(ENOTFOUND) tenant/user postgres.nonexistent_tenant not found",
+        "pooler_tenant_not_found",
+      ],
+      ["Invalid SCRAM server-final-message", "authentication_failed"],
+      ["Invalid client signature", "authentication_failed"],
+      [
+        "SASL: SCRAM-SERVER-FINAL-MESSAGE: server signature is missing",
+        "authentication_failed",
+      ],
+    ] as const;
+
+    for (const [message, reason] of cases) {
+      expect(classifyMimitCronDatabaseError({ code: "XX000", message })).toBe(
+        reason,
+      );
+    }
+    expect(
+      classifyMimitCronDatabaseError({
+        code: "XX000",
+        message: "getaddrinfo ENOTFOUND db.example.test",
+      }),
+    ).toBe("dns_failed");
+  });
+
+  test("classifies pool capacity and upstream termination messages", () => {
+    const cases = [
+      ["Max client connections reached", "resource_exhausted"],
+      ["sorry, too many clients already", "resource_exhausted"],
+      ["Connection terminated unexpectedly", "server_unavailable"],
+      ["(DB_TERMINATION) upstream database disconnected", "server_unavailable"],
+    ] as const;
+
+    for (const [message, reason] of cases) {
+      expect(classifyMimitCronDatabaseError({ code: "XX000", message })).toBe(
+        reason,
+      );
+    }
+  });
+
+  test("applies specific Supavisor message precedence", () => {
+    expect(
+      classifyMimitCronDatabaseError({
+        message:
+          "Circuit breaker open: tenant or user not found after password authentication failure",
+      }),
+    ).toBe("pooler_circuit_open");
+    expect(
+      classifyMimitCronDatabaseError({
+        message: "Tenant or user not found: password authentication failed",
+      }),
+    ).toBe("pooler_tenant_not_found");
+    expect(
+      classifyMimitCronDatabaseError({
+        message: "Invalid client signature: too many clients already",
+      }),
+    ).toBe("authentication_failed");
+  });
+
   test("allows client initialization to force its dedicated reason", () => {
     const error = new MimitCronDatabaseUnavailableError(
       { code: "28P01" },

@@ -22,6 +22,7 @@ const MAX_DATABASE_ERROR_NODES = 16;
 export type MimitCronDatabaseUnavailableReason =
   | "client_initialization_failed"
   | "pooler_circuit_open"
+  | "pooler_tenant_not_found"
   | "authentication_failed"
   | "connection_timeout"
   | "dns_failed"
@@ -120,6 +121,32 @@ function reasonFromDatabaseMessage(
     message.includes("ecircuitbreaker")
   ) {
     return "pooler_circuit_open";
+  }
+  if (
+    message.includes("tenant or user not found") ||
+    message.includes("tenant not found") ||
+    message.includes("(enotfound) tenant/user ")
+  ) {
+    return "pooler_tenant_not_found";
+  }
+  if (
+    message.includes("invalid scram server-final-message") ||
+    message.includes("invalid client signature") ||
+    message.includes("sasl")
+  ) {
+    return "authentication_failed";
+  }
+  if (
+    message.includes("max client connections") ||
+    message.includes("too many clients")
+  ) {
+    return "resource_exhausted";
+  }
+  if (
+    message.includes("connection terminated unexpectedly") ||
+    message.includes("db_termination")
+  ) {
+    return "server_unavailable";
   }
   if (message.includes("connect_timeout") || message.includes("timed out")) {
     return "connection_timeout";
