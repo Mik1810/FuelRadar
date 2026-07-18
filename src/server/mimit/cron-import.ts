@@ -17,6 +17,65 @@ const RETRY_DELAY_MS = 250;
 const CIRCUIT_BREAKER_FAILURES = 3;
 const CIRCUIT_BREAKER_COOLDOWN_MS = 24 * 60 * 60 * 1_000;
 const RUN_LEASE_MS = 15 * 60 * 1_000;
+const MAX_DATABASE_ERROR_CAUSE_DEPTH = 8;
+
+export type MimitCronDatabaseUnavailableReason =
+  | "authentication_failed"
+  | "connection_timeout"
+  | "dns_failed"
+  | "connection_refused"
+  | "permission_denied"
+  | "database_not_found"
+  | "connection_reset"
+  | "unknown";
+
+const DATABASE_ERROR_REASONS = new Map<
+  string,
+  MimitCronDatabaseUnavailableReason
+>([
+  ["28P01", "authentication_failed"],
+  ["28000", "authentication_failed"],
+  ["ETIMEDOUT", "connection_timeout"],
+  ["CONNECT_TIMEOUT", "connection_timeout"],
+  ["ENOTFOUND", "dns_failed"],
+  ["EAI_AGAIN", "dns_failed"],
+  ["ECONNREFUSED", "connection_refused"],
+  ["42501", "permission_denied"],
+  ["3D000", "database_not_found"],
+  ["ECONNRESET", "connection_reset"],
+]);
+
+function readErrorField(error: unknown, field: "cause" | "code"): unknown {
+  if ((typeof error !== "object" && typeof error !== "function") || !error) {
+    return undefined;
+  }
+  try {
+    return Reflect.get(error, field);
+  } catch {
+    return undefined;
+  }
+}
+
+export function classifyMimitCronDatabaseError(
+  error: unknown,
+): MimitCronDatabaseUnavailableReason {
+  let current: unknown = error;
+  const visited = new Set<unknown>();
+
+  for (let depth = 0; depth < MAX_DATABASE_ERROR_CAUSE_DEPTH; depth += 1) {
+    if (current === null || current === undefined || visited.has(current)) break;
+    visited.add(current);
+
+    const code = readErrorField(current, "code");
+    if (typeof code === "string") {
+      const reason = DATABASE_ERROR_REASONS.get(code.toUpperCase());
+      if (reason) return reason;
+    }
+    current = readErrorField(current, "cause");
+  }
+
+  return "unknown";
+}
 
 export class MimitCronConfigurationError extends Error {
   constructor(cause?: unknown) {
@@ -26,11 +85,14 @@ export class MimitCronConfigurationError extends Error {
 }
 
 export class MimitCronDatabaseUnavailableError extends Error {
+  readonly reason: MimitCronDatabaseUnavailableReason;
+
   constructor(cause?: unknown) {
     super("MIMIT cron database is unavailable before the import claim.", {
       cause,
     });
     this.name = "MimitCronDatabaseUnavailableError";
+    this.reason = classifyMimitCronDatabaseError(cause);
   }
 }
 

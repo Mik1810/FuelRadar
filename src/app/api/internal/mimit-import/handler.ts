@@ -93,6 +93,7 @@ export function createMimitImportHandler(
           JSON.stringify({
             event: "mimit_import_database_unavailable",
             durationMs: now() - requestStartedAt,
+            reason: error.reason,
           }),
         );
         return NextResponse.json(
@@ -100,6 +101,7 @@ export function createMimitImportHandler(
             error: {
               code: "database_unavailable",
               message: "Service unavailable",
+              reason: error.reason,
             },
           },
           { status: 503 },
