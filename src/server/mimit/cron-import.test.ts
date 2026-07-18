@@ -1,0 +1,457 @@
+import { describe, expect, test } from "bun:test";
+import type postgres from "postgres";
+
+import type { MimitDatasetMetadata } from "@/domain/mimit/source";
+import {
+  getMimitCircuitFingerprint,
+  getMimitMetadataFingerprint,
+  MimitImportClaimLostError,
+  runMimitImport,
+} from "@/server/mimit/importer";
+import { runMimitCronImport } from "@/server/mimit/cron-import";
+
+type QueryEvent = {
+  text: string;
+  values: unknown[];
+};
+
+type FakeSqlOptions = {
+  lockAcquired?: boolean;
+  activeRunId?: string;
+  failureCount?: (fingerprint: string) => number;
+  unchangedDatasetId?: string;
+  loseClaimOnMetadataUpdate?: boolean;
+  loseClaimBeforeActivation?: boolean;
+};
+
+function normalizeSql(strings: TemplateStringsArray): string {
+  return strings.join("?").replace(/\s+/g, " ").trim();
+}
+
+function createFakeSql(options: FakeSqlOptions = {}) {
+  const events: QueryEvent[] = [];
+  let nextRunId = 1;
+  let activeRunId = options.activeRunId;
+
+  const query = async <T extends unknown[]>(
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ): Promise<T> => {
+    const text = normalizeSql(strings);
+    events.push({ text, values });
+
+    if (text.includes("pg_try_advisory_xact_lock")) {
+      return [{ acquired: options.lockAcquired ?? true }] as T;
+    }
+    if (text.includes("pg_advisory_xact_lock")) {
+      return [] as unknown as T;
+    }
+    if (text.includes("error_message = 'Import lease expired")) {
+      return [] as unknown as T;
+    }
+    if (
+      text.includes("from fuelradar.import_runs") &&
+      text.includes("for update")
+    ) {
+      if (options.loseClaimBeforeActivation) activeRunId = "replacement-run";
+      const requestedId = values.find(
+        (value): value is string => typeof value === "string" && value.startsWith("run-"),
+      );
+      return (requestedId && requestedId === activeRunId
+        ? [{ id: requestedId }]
+        : []) as T;
+    }
+    if (text.includes("where status = 'running'") && text.includes("select id")) {
+      return (activeRunId ? [{ id: activeRunId }] : []) as T;
+    }
+    if (
+      text.includes("insert into fuelradar.import_runs") &&
+      text.includes("values ('running'")
+    ) {
+      activeRunId = `run-${nextRunId++}`;
+      return [{ id: activeRunId }] as T;
+    }
+    if (text.includes("select count(*)::integer as failure_count")) {
+      const fingerprint = values.find(
+        (value): value is string => typeof value === "string" && value.length === 64,
+      );
+      return [
+        { failure_count: options.failureCount?.(fingerprint ?? "") ?? 0 },
+      ] as T;
+    }
+    if (
+      text.includes("from fuelradar.datasets") &&
+      text.includes("where is_active and metadata_fingerprint")
+    ) {
+      return (options.unchangedDatasetId
+        ? [{ id: options.unchangedDatasetId }]
+        : []) as T;
+    }
+    if (text.startsWith("update fuelradar.import_runs")) {
+      if (
+        options.loseClaimOnMetadataUpdate &&
+        text.includes("set source_etag")
+      ) {
+        activeRunId = "replacement-run";
+      }
+      const requestedId = values.find(
+        (value): value is string => typeof value === "string" && value.startsWith("run-"),
+      );
+      const updated = requestedId !== undefined && requestedId === activeRunId;
+      if (
+        updated &&
+        (text.includes("status = 'failed'") || text.includes("status = 'skipped'") || text.includes("status = 'succeeded'"))
+      ) {
+        activeRunId = undefined;
+      }
+      return (text.includes("returning id") && updated
+        ? [{ id: requestedId }]
+        : []) as T;
+    }
+
+    throw new Error(`Unexpected SQL in test: ${text}`);
+  };
+
+  const sql = query as typeof query & {
+    begin: <T>(
+      callback: (transaction: postgres.TransactionSql) => Promise<T>,
+    ) => Promise<T>;
+    json: (value: unknown) => unknown;
+  };
+  sql.begin = async <T>(
+    callback: (transaction: postgres.TransactionSql) => Promise<T>,
+  ) => callback(sql as unknown as postgres.TransactionSql);
+  sql.json = (value: unknown) => value;
+
+  return { sql: sql as unknown as postgres.Sql, events };
+}
+
+function metadata(version: string | null): MimitDatasetMetadata {
+  const resource = (name: "stations" | "prices") => ({
+    name,
+    url: `https://example.test/${name}.csv`,
+    etag: version ? `\"${name}-${version}\"` : null,
+    lastModified: version ? "Sat, 18 Jul 2026 12:00:00 GMT" : null,
+    contentLength: name === "stations" ? 100 : 200,
+    contentType: "text/csv",
+    checkedAt: "2026-07-18T12:00:00.000Z",
+  });
+  return { stations: resource("stations"), prices: resource("prices") };
+}
+
+function neverDownload() {
+  return async () => {
+    throw new Error("download should not be called");
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+describe("MIMIT cron import", () => {
+  test("returns already-running for an overlapping claimed run and cleans up its lease", async () => {
+    const fake = createFakeSql({ failureCount: () => 3 });
+    const metadataStarted = deferred<void>();
+    const metadataResult = deferred<MimitDatasetMetadata>();
+    const first = runMimitCronImport({
+      sql: fake.sql,
+      fetchMetadata: async () => {
+        metadataStarted.resolve();
+        return metadataResult.promise;
+      },
+      downloadDataset: neverDownload(),
+      isTransientFetchError: () => false,
+    });
+    await metadataStarted.promise;
+
+    const overlap = await runMimitCronImport({
+      sql: fake.sql,
+      fetchMetadata: async () => metadata("overlap"),
+      downloadDataset: neverDownload(),
+      isTransientFetchError: () => false,
+    });
+    expect(overlap.reason).toBe("already-running");
+    expect(
+      fake.events.filter(({ text }) => text.includes("pg_try_advisory")),
+    ).toHaveLength(2);
+
+    metadataResult.resolve(metadata("first"));
+    expect((await first).reason).toBe("circuit-open");
+
+    const after = await runMimitCronImport({
+      sql: fake.sql,
+      fetchMetadata: async () => metadata("after"),
+      downloadDataset: neverDownload(),
+      isTransientFetchError: () => false,
+    });
+    expect(after).toMatchObject({ reason: "circuit-open", runId: "run-2" });
+  });
+
+  test("does not claim when the advisory lock or an active lease blocks it", async () => {
+    for (const options of [
+      { lockAcquired: false },
+      { lockAcquired: true, activeRunId: "active-run" },
+    ]) {
+      const fake = createFakeSql(options);
+      let metadataCalls = 0;
+      const result = await runMimitCronImport({
+        sql: fake.sql,
+        fetchMetadata: async () => {
+          metadataCalls += 1;
+          return metadata("unused");
+        },
+        downloadDataset: neverDownload(),
+        isTransientFetchError: () => false,
+      });
+
+      expect(result.reason).toBe("already-running");
+      expect(metadataCalls).toBe(0);
+      expect(
+        fake.events.some(({ text }) =>
+          text.includes("insert into fuelradar.import_runs"),
+        ),
+      ).toBeFalse();
+    }
+  });
+
+  test("retries transient metadata failures exactly three times with bounded backoff", async () => {
+    const fake = createFakeSql();
+    const transientError = new Error("temporary upstream failure");
+    const sleeps: number[] = [];
+    let attempts = 0;
+
+    await expect(
+      runMimitCronImport({
+        sql: fake.sql,
+        fetchMetadata: async () => {
+          attempts += 1;
+          throw transientError;
+        },
+        downloadDataset: neverDownload(),
+        isTransientFetchError: (error) => error === transientError,
+        sleep: async (milliseconds) => {
+          sleeps.push(milliseconds);
+        },
+      }),
+    ).rejects.toBe(transientError);
+
+    expect(attempts).toBe(3);
+    expect(sleeps).toEqual([250, 500]);
+    expect(
+      fake.events.some(
+        ({ text }) =>
+          text.includes("status = 'failed'") &&
+          text.includes("MIMIT import failed before dataset processing"),
+      ),
+    ).toBeTrue();
+  });
+
+  test("does not retry a non-transient metadata failure and fails its claim", async () => {
+    const fake = createFakeSql();
+    const permanentError = new Error("invalid upstream response");
+    let attempts = 0;
+    let sleeps = 0;
+
+    await expect(
+      runMimitCronImport({
+        sql: fake.sql,
+        fetchMetadata: async () => {
+          attempts += 1;
+          throw permanentError;
+        },
+        downloadDataset: neverDownload(),
+        isTransientFetchError: () => false,
+        sleep: async () => {
+          sleeps += 1;
+        },
+      }),
+    ).rejects.toBe(permanentError);
+
+    expect(attempts).toBe(1);
+    expect(sleeps).toBe(0);
+    const failure = fake.events.find(({ text }) =>
+      text.includes("MIMIT import failed before dataset processing"),
+    );
+    expect(failure).toBeDefined();
+    expect(failure?.values).toContain("run-1");
+    expect(JSON.stringify(failure)).not.toContain(permanentError.message);
+  });
+
+  test("opens the circuit for a repeatedly failed fingerprint", async () => {
+    const fake = createFakeSql({ failureCount: () => 3 });
+    let downloads = 0;
+
+    const result = await runMimitCronImport({
+      sql: fake.sql,
+      fetchMetadata: async () => metadata("broken-version"),
+      downloadDataset: async () => {
+        downloads += 1;
+        throw new Error("download should not be called");
+      },
+      isTransientFetchError: () => false,
+    });
+
+    expect(result).toMatchObject({
+      status: "skipped",
+      runId: "run-1",
+      reason: "circuit-open",
+    });
+    expect(downloads).toBe(0);
+    expect(
+      fake.events.some(
+        ({ text }) =>
+          text.includes("status = 'skipped'") &&
+          text.includes("Circuit breaker open"),
+      ),
+    ).toBeTrue();
+  });
+
+  test("a new metadata fingerprint bypasses a circuit opened for the old version", async () => {
+    const oldMetadata = metadata("old");
+    const oldFingerprint = getMimitCircuitFingerprint(oldMetadata);
+    const fake = createFakeSql({
+      failureCount: (fingerprint) =>
+        fingerprint === oldFingerprint ? 3 : 0,
+      unchangedDatasetId: "dataset-new",
+    });
+
+    const oldResult = await runMimitCronImport({
+      sql: fake.sql,
+      fetchMetadata: async () => oldMetadata,
+      downloadDataset: neverDownload(),
+      isTransientFetchError: () => false,
+    });
+    expect(oldResult.reason).toBe("circuit-open");
+
+    const newResult = await runMimitCronImport({
+      sql: fake.sql,
+      fetchMetadata: async () => metadata("new"),
+      downloadDataset: neverDownload(),
+      isTransientFetchError: () => false,
+    });
+    expect(newResult).toMatchObject({
+      status: "skipped",
+      datasetId: "dataset-new",
+      reason: "metadata-unchanged",
+    });
+  });
+});
+
+describe("MIMIT metadata fingerprints", () => {
+  test("uses the strong fingerprint when validators exist", () => {
+    const versioned = metadata("v1");
+    const strong = getMimitMetadataFingerprint(versioned);
+
+    expect(strong).not.toBeNull();
+    expect(getMimitCircuitFingerprint(versioned)).toBe(strong!);
+  });
+
+  test("uses a stable non-null circuit fallback without validators", () => {
+    const unversioned = metadata(null);
+    const changed = metadata(null);
+    changed.prices.contentLength = 201;
+
+    expect(getMimitMetadataFingerprint(unversioned)).toBeNull();
+    expect(getMimitCircuitFingerprint(unversioned)).toHaveLength(64);
+    expect(getMimitCircuitFingerprint(unversioned)).not.toBe(
+      getMimitCircuitFingerprint(changed),
+    );
+  });
+});
+
+describe("MIMIT import claim fencing", () => {
+  test("a reclaimed worker cannot update a terminal state", async () => {
+    const fake = createFakeSql({
+      activeRunId: "run-a",
+      loseClaimOnMetadataUpdate: true,
+    });
+    let downloads = 0;
+
+    await expect(
+      runMimitImport({
+        sql: fake.sql,
+        claimedRun: {
+          id: "run-a",
+          startedAt: new Date("2026-07-18T12:00:00.000Z"),
+        },
+        fetchMetadata: async () => metadata("stale-worker"),
+        downloadDataset: async () => {
+          downloads += 1;
+          throw new Error("download should not be called");
+        },
+      }),
+    ).rejects.toBeInstanceOf(MimitImportClaimLostError);
+
+    expect(downloads).toBe(0);
+    expect(
+      fake.events.some(
+        ({ text, values }) =>
+          text.includes("status = 'failed'") && values.includes("run-a"),
+      ),
+    ).toBeTrue();
+    expect(
+      fake.events.some(
+        ({ text }) =>
+          text.includes("status = 'failed'") && text.includes("returning id"),
+      ),
+    ).toBeTrue();
+  });
+
+  test("checks the claim under lock before creating or activating a dataset", async () => {
+    const fake = createFakeSql({
+      activeRunId: "run-a",
+      loseClaimBeforeActivation: true,
+    });
+    const stationsText = await Bun.file(
+      `${import.meta.dir}/../../domain/mimit/__fixtures__/stations.valid.csv`,
+    ).text();
+    const pricesText = await Bun.file(
+      `${import.meta.dir}/../../domain/mimit/__fixtures__/prices.valid.csv`,
+    ).text();
+
+    await expect(
+      runMimitImport({
+        sql: fake.sql,
+        claimedRun: {
+          id: "run-a",
+          startedAt: new Date("2026-07-18T12:00:00.000Z"),
+        },
+        fetchMetadata: async () => metadata("activation-fence"),
+        downloadDataset: async () => ({
+          stations: {
+            name: "stations",
+            url: "https://example.test/stations.csv",
+            text: stationsText,
+            downloadedAt: "2026-07-18T12:00:01.000Z",
+          },
+          prices: {
+            name: "prices",
+            url: "https://example.test/prices.csv",
+            text: pricesText,
+            downloadedAt: "2026-07-18T12:00:01.000Z",
+          },
+        }),
+      }),
+    ).rejects.toBeInstanceOf(MimitImportClaimLostError);
+
+    expect(
+      fake.events.some(
+        ({ text }) =>
+          text.includes("from fuelradar.import_runs") && text.includes("for update"),
+      ),
+    ).toBeTrue();
+    expect(
+      fake.events.some(({ text }) =>
+        text.includes("insert into fuelradar.datasets"),
+      ),
+    ).toBeFalse();
+    expect(
+      fake.events.some(({ text }) => text.includes("set is_active")),
+    ).toBeFalse();
+  });
+});

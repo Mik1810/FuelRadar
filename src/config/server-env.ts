@@ -14,6 +14,10 @@ const runtimeEnvSchema = z.object({
   DATABASE_URL: postgresUrl,
 });
 
+const cronEnvSchema = z.object({
+  CRON_SECRET: z.string().min(32),
+});
+
 const migrationEnvSchema = z.object({
   MIGRATION_DATABASE_URL: postgresUrl,
 });
@@ -40,4 +44,8 @@ export function parseMigrationEnv(
   input: unknown,
 ): z.infer<typeof migrationEnvSchema> {
   return parseEnvironment(migrationEnvSchema, input, "migration");
+}
+
+export function parseCronEnv(input: unknown): z.infer<typeof cronEnvSchema> {
+  return parseEnvironment(cronEnvSchema, input, "cron");
 }

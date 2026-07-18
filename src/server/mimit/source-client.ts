@@ -13,6 +13,35 @@ export type {
 };
 export { MIMIT_RESOURCES };
 
+const METADATA_TIMEOUT_MS = 10_000;
+const DOWNLOAD_TIMEOUT_MS = 30_000;
+const MAX_DOWNLOAD_BYTES = 16 * 1024 * 1024;
+
+export class MimitSourceFetchError extends Error {
+  readonly transient: boolean;
+
+  constructor(input: { resource: MimitResourceName; operation: "metadata" | "download"; status: number }) {
+    super(
+      `Unable to ${input.operation === "metadata" ? "fetch MIMIT metadata for" : "download MIMIT CSV for"} ${input.resource}: HTTP ${input.status}`,
+    );
+    this.name = "MimitSourceFetchError";
+    this.transient =
+      input.status === 408 ||
+      input.status === 425 ||
+      input.status === 429 ||
+      input.status >= 500;
+  }
+}
+
+export function isTransientMimitFetchError(error: unknown): boolean {
+  return (
+    (error instanceof MimitSourceFetchError && error.transient) ||
+    error instanceof TypeError ||
+    (error instanceof Error &&
+      (error.name === "AbortError" || error.name === "TimeoutError"))
+  );
+}
+
 function parseContentLength(value: string | null): number | null {
   if (!value) return null;
   const parsed = Number(value);
@@ -23,11 +52,17 @@ export async function fetchMimitResourceMetadata(
   name: MimitResourceName,
 ): Promise<MimitResourceMetadata> {
   const url = MIMIT_RESOURCES[name];
-  const response = await fetch(url, { method: "HEAD", cache: "no-store" });
+  const response = await fetch(url, {
+    method: "HEAD",
+    cache: "no-store",
+    signal: AbortSignal.timeout(METADATA_TIMEOUT_MS),
+  });
   if (!response.ok) {
-    throw new Error(
-      `Unable to fetch MIMIT ${name} metadata: HTTP ${response.status}`,
-    );
+    throw new MimitSourceFetchError({
+      resource: name,
+      operation: "metadata",
+      status: response.status,
+    });
   }
 
   return {
@@ -53,17 +88,45 @@ export async function downloadMimitResource(
   name: MimitResourceName,
 ): Promise<MimitResourceDownload> {
   const url = MIMIT_RESOURCES[name];
-  const response = await fetch(url, { cache: "no-store" });
+  const response = await fetch(url, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+  });
   if (!response.ok) {
-    throw new Error(
-      `Unable to download MIMIT ${name} CSV: HTTP ${response.status}`,
-    );
+    throw new MimitSourceFetchError({
+      resource: name,
+      operation: "download",
+      status: response.status,
+    });
   }
+
+  const declaredLength = parseContentLength(response.headers.get("content-length"));
+  if (declaredLength !== null && declaredLength > MAX_DOWNLOAD_BYTES) {
+    throw new Error(`MIMIT ${name} CSV exceeds the download size limit.`);
+  }
+
+  if (!response.body) throw new Error(`MIMIT ${name} CSV response has no body.`);
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let receivedBytes = 0;
+  let text = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    receivedBytes += value.byteLength;
+    if (receivedBytes > MAX_DOWNLOAD_BYTES) {
+      await reader.cancel();
+      throw new Error(`MIMIT ${name} CSV exceeds the download size limit.`);
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  text += decoder.decode();
 
   return {
     name,
     url,
-    text: await response.text(),
+    text,
     downloadedAt: new Date().toISOString(),
   };
 }
