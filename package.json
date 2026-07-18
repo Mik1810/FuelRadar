@@ -15,10 +15,12 @@
     "db:stop": "SUPABASE_TELEMETRY_DISABLED=1 supabase stop",
     "db:reset": "SUPABASE_TELEMETRY_DISABLED=1 supabase db reset --local",
     "db:test": "SUPABASE_TELEMETRY_DISABLED=1 supabase test db",
+    "db:test:import": "bun run scripts/verify-mimit-import.ts",
     "db:explain": "bun run scripts/verify-nearby-query-plan.ts",
     "db:push:dry": "SUPABASE_TELEMETRY_DISABLED=1 supabase db push --dry-run",
     "db:push": "SUPABASE_TELEMETRY_DISABLED=1 supabase db push",
     "db:verify": "bun run scripts/check-database-connection.ts",
+    "import:mimit": "bun run scripts/import-mimit.ts",
     "analyze:mimit": "bun run scripts/analyze-mimit-data.ts",
     "query:nearby": "bun run scripts/query-mimit-nearby.ts"
   },
