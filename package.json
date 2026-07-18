@@ -9,21 +9,34 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
+    "db:generate": "drizzle-kit generate",
+    "db:check": "drizzle-kit check",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:reset": "supabase db reset --local",
+    "db:push:dry": "supabase db push --dry-run",
+    "db:push": "supabase db push",
+    "db:verify": "bun run scripts/check-database-connection.ts",
     "analyze:mimit": "bun run scripts/analyze-mimit-data.ts",
     "query:nearby": "bun run scripts/query-mimit-nearby.ts"
   },
   "dependencies": {
+    "drizzle-orm": "^0.45.2",
     "next": "16.2.10",
+    "postgres": "^3.4.9",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/node": "^20",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
+    "supabase": "^2.109.1",
     "typescript": "^5"
   },
   "trustedDependencies": [

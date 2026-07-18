@@ -39,6 +39,9 @@ Copy `.env.example` to `.env.local` and fill in the server-only values.
 Never commit `.env.local` or expose database credentials through variables
 prefixed with `NEXT_PUBLIC_`.
 
+Database setup, connection roles and migration commands are documented in
+[`docs/database.md`](docs/database.md).
+
 ## Data source
 
 FuelRadar uses the official daily MIMIT station registry and price datasets.
