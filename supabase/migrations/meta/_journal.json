@@ -15,6 +15,20 @@
       "when": 1784384985923,
       "tag": "20260718142945_postgis_schema_nearby",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784386002987,
+      "tag": "20260718144642_mimit_import_metadata",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784386052541,
+      "tag": "20260718144732_allow_corrected_extraction",
+      "breakpoints": true
     }
   ]
 }

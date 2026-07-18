@@ -5,12 +5,13 @@ WITH dataset AS (
 		extraction_date,
 		stations_extraction_date,
 		prices_extraction_date,
+		source_fingerprint,
 		activated_at,
 		is_active,
 		station_count,
 		price_count
 	)
-	VALUES ('2026-07-18', '2026-07-18', '2026-07-18', now(), true, 4, 5)
+	VALUES ('2026-07-18', '2026-07-18', '2026-07-18', 'local-rome-fixture-v1', now(), true, 4, 5)
 	RETURNING id
 ), inserted_stations AS (
 	INSERT INTO fuelradar.stations (

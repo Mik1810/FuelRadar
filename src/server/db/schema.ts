@@ -49,6 +49,9 @@ export const datasets = fuelRadarSchema.table(
     }).notNull(),
     sourceEtag: text("source_etag"),
     sourceLastModified: text("source_last_modified"),
+    sourceFingerprint: text("source_fingerprint").notNull(),
+    metadataFingerprint: text("metadata_fingerprint"),
+    sourceMetadata: jsonb("source_metadata").$type<Record<string, unknown>>(),
     importedAt: timestamp("imported_at", {
       withTimezone: true,
       mode: "date",
@@ -64,7 +67,8 @@ export const datasets = fuelRadarSchema.table(
     priceCount: integer("price_count").notNull(),
   },
   (table) => [
-    uniqueIndex("datasets_extraction_date_key").on(table.extractionDate),
+    index("datasets_extraction_date_idx").on(table.extractionDate),
+    uniqueIndex("datasets_source_fingerprint_key").on(table.sourceFingerprint),
     uniqueIndex("datasets_one_active_idx")
       .on(table.isActive)
       .where(sql`${table.isActive} = true`),
@@ -177,8 +181,12 @@ export const importRuns = fuelRadarSchema.table(
     ),
     sourceEtag: text("source_etag"),
     sourceLastModified: text("source_last_modified"),
+    sourceFingerprint: text("source_fingerprint"),
+    metadataFingerprint: text("metadata_fingerprint"),
+    sourceMetadata: jsonb("source_metadata").$type<Record<string, unknown>>(),
     stationCount: integer("station_count"),
     priceCount: integer("price_count"),
+    durationMs: integer("duration_ms"),
     diagnostics: jsonb("diagnostics").$type<MimitDatasetDiagnostics>(),
     errorMessage: text("error_message"),
   },
@@ -195,6 +203,10 @@ export const importRuns = fuelRadarSchema.table(
     check(
       "import_runs_price_count_check",
       sql`${table.priceCount} is null or ${table.priceCount} >= 0`,
+    ),
+    check(
+      "import_runs_duration_ms_check",
+      sql`${table.durationMs} is null or ${table.durationMs} >= 0`,
     ),
   ],
 );

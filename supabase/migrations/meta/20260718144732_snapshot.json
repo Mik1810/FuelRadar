@@ -1,0 +1,656 @@
+{
+  "id": "0e2f7897-afc0-4650-98a9-3737892ee05c",
+  "prevId": "984fac03-086f-4bdd-b940-c9b8728f1076",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "fuelradar.datasets": {
+      "name": "datasets",
+      "schema": "fuelradar",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "datasets_id_seq",
+            "schema": "fuelradar",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "extraction_date": {
+          "name": "extraction_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stations_extraction_date": {
+          "name": "stations_extraction_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prices_extraction_date": {
+          "name": "prices_extraction_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_etag": {
+          "name": "source_etag",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_last_modified": {
+          "name": "source_last_modified",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_fingerprint": {
+          "name": "source_fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "metadata_fingerprint": {
+          "name": "metadata_fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_metadata": {
+          "name": "source_metadata",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "imported_at": {
+          "name": "imported_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "activated_at": {
+          "name": "activated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "station_count": {
+          "name": "station_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "price_count": {
+          "name": "price_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "datasets_extraction_date_idx": {
+          "name": "datasets_extraction_date_idx",
+          "columns": [
+            {
+              "expression": "extraction_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "datasets_source_fingerprint_key": {
+          "name": "datasets_source_fingerprint_key",
+          "columns": [
+            {
+              "expression": "source_fingerprint",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "datasets_one_active_idx": {
+          "name": "datasets_one_active_idx",
+          "columns": [
+            {
+              "expression": "is_active",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"fuelradar\".\"datasets\".\"is_active\" = true",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "datasets_station_count_check": {
+          "name": "datasets_station_count_check",
+          "value": "\"fuelradar\".\"datasets\".\"station_count\" >= 0"
+        },
+        "datasets_price_count_check": {
+          "name": "datasets_price_count_check",
+          "value": "\"fuelradar\".\"datasets\".\"price_count\" >= 0"
+        },
+        "datasets_activation_check": {
+          "name": "datasets_activation_check",
+          "value": "not \"fuelradar\".\"datasets\".\"is_active\" or \"fuelradar\".\"datasets\".\"activated_at\" is not null"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "fuelradar.import_runs": {
+      "name": "import_runs",
+      "schema": "fuelradar",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "import_runs_id_seq",
+            "schema": "fuelradar",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "status": {
+          "name": "status",
+          "type": "import_status",
+          "typeSchema": "fuelradar",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'running'"
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dataset_id": {
+          "name": "dataset_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_etag": {
+          "name": "source_etag",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_last_modified": {
+          "name": "source_last_modified",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_fingerprint": {
+          "name": "source_fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "metadata_fingerprint": {
+          "name": "metadata_fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_metadata": {
+          "name": "source_metadata",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "station_count": {
+          "name": "station_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "price_count": {
+          "name": "price_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "duration_ms": {
+          "name": "duration_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "diagnostics": {
+          "name": "diagnostics",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error_message": {
+          "name": "error_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "import_runs_started_at_idx": {
+          "name": "import_runs_started_at_idx",
+          "columns": [
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "import_runs_dataset_id_datasets_id_fk": {
+          "name": "import_runs_dataset_id_datasets_id_fk",
+          "tableFrom": "import_runs",
+          "tableTo": "datasets",
+          "schemaTo": "fuelradar",
+          "columnsFrom": [
+            "dataset_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "import_runs_finished_at_check": {
+          "name": "import_runs_finished_at_check",
+          "value": "\"fuelradar\".\"import_runs\".\"finished_at\" is null or \"fuelradar\".\"import_runs\".\"finished_at\" >= \"fuelradar\".\"import_runs\".\"started_at\""
+        },
+        "import_runs_station_count_check": {
+          "name": "import_runs_station_count_check",
+          "value": "\"fuelradar\".\"import_runs\".\"station_count\" is null or \"fuelradar\".\"import_runs\".\"station_count\" >= 0"
+        },
+        "import_runs_price_count_check": {
+          "name": "import_runs_price_count_check",
+          "value": "\"fuelradar\".\"import_runs\".\"price_count\" is null or \"fuelradar\".\"import_runs\".\"price_count\" >= 0"
+        },
+        "import_runs_duration_ms_check": {
+          "name": "import_runs_duration_ms_check",
+          "value": "\"fuelradar\".\"import_runs\".\"duration_ms\" is null or \"fuelradar\".\"import_runs\".\"duration_ms\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "fuelradar.prices": {
+      "name": "prices",
+      "schema": "fuelradar",
+      "columns": {
+        "dataset_id": {
+          "name": "dataset_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "station_id": {
+          "name": "station_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fuel_type": {
+          "name": "fuel_type",
+          "type": "fuel_type",
+          "typeSchema": "fuelradar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "service_mode": {
+          "name": "service_mode",
+          "type": "service_mode",
+          "typeSchema": "fuelradar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "price": {
+          "name": "price",
+          "type": "numeric(7, 3)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "communicated_at": {
+          "name": "communicated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "prices_nearby_lookup_idx": {
+          "name": "prices_nearby_lookup_idx",
+          "columns": [
+            {
+              "expression": "dataset_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "fuel_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "service_mode",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "price",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "station_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "prices_station_fkey": {
+          "name": "prices_station_fkey",
+          "tableFrom": "prices",
+          "tableTo": "stations",
+          "schemaTo": "fuelradar",
+          "columnsFrom": [
+            "dataset_id",
+            "station_id"
+          ],
+          "columnsTo": [
+            "dataset_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "prices_pkey": {
+          "name": "prices_pkey",
+          "columns": [
+            "dataset_id",
+            "station_id",
+            "fuel_type",
+            "service_mode"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "prices_price_check": {
+          "name": "prices_price_check",
+          "value": "\"fuelradar\".\"prices\".\"price\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "fuelradar.stations": {
+      "name": "stations",
+      "schema": "fuelradar",
+      "columns": {
+        "dataset_id": {
+          "name": "dataset_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "operator": {
+          "name": "operator",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "brand": {
+          "name": "brand",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "station_type": {
+          "name": "station_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "city": {
+          "name": "city",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "province": {
+          "name": "province",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "location": {
+          "name": "location",
+          "type": "geometry(point)",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "stations_dataset_idx": {
+          "name": "stations_dataset_idx",
+          "columns": [
+            {
+              "expression": "dataset_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "stations_city_idx": {
+          "name": "stations_city_idx",
+          "columns": [
+            {
+              "expression": "dataset_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "city",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "stations_location_gist_idx": {
+          "name": "stations_location_gist_idx",
+          "columns": [
+            {
+              "expression": "location",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gist",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "stations_dataset_id_fkey": {
+          "name": "stations_dataset_id_fkey",
+          "tableFrom": "stations",
+          "tableTo": "datasets",
+          "schemaTo": "fuelradar",
+          "columnsFrom": [
+            "dataset_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "stations_pkey": {
+          "name": "stations_pkey",
+          "columns": [
+            "dataset_id",
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "fuelradar.fuel_type": {
+      "name": "fuel_type",
+      "schema": "fuelradar",
+      "values": [
+        "benzina",
+        "diesel",
+        "gpl",
+        "metano"
+      ]
+    },
+    "fuelradar.import_status": {
+      "name": "import_status",
+      "schema": "fuelradar",
+      "values": [
+        "running",
+        "succeeded",
+        "failed",
+        "skipped"
+      ]
+    },
+    "fuelradar.service_mode": {
+      "name": "service_mode",
+      "schema": "fuelradar",
+      "values": [
+        "self",
+        "served"
+      ]
+    }
+  },
+  "schemas": {
+    "fuelradar": "fuelradar"
+  },
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
