@@ -9,6 +9,7 @@ import {
   runMimitImport,
 } from "@/server/mimit/importer";
 import {
+  classifyMimitCronDatabaseError,
   MimitCronDatabaseUnavailableError,
   runMimitCronImport,
 } from "@/server/mimit/cron-import";
@@ -371,6 +372,82 @@ describe("MIMIT cron import", () => {
       datasetId: "dataset-new",
       reason: "metadata-unchanged",
     });
+  });
+});
+
+describe("MIMIT database diagnostics", () => {
+  test("classifies supported PostgreSQL and Node error codes", () => {
+    const cases = [
+      ["28P01", "authentication_failed"],
+      ["28000", "authentication_failed"],
+      ["ETIMEDOUT", "connection_timeout"],
+      ["connect_timeout", "connection_timeout"],
+      ["ENOTFOUND", "dns_failed"],
+      ["eai_again", "dns_failed"],
+      ["ECONNREFUSED", "connection_refused"],
+      ["42501", "permission_denied"],
+      ["3D000", "database_not_found"],
+      ["ECONNRESET", "connection_reset"],
+    ] as const;
+
+    for (const [code, reason] of cases) {
+      expect(classifyMimitCronDatabaseError({ code })).toBe(reason);
+    }
+    expect(classifyMimitCronDatabaseError({ code: "UNRECOGNIZED" })).toBe(
+      "unknown",
+    );
+  });
+
+  test("finds a supported code in nested causes", () => {
+    const error = {
+      code: "OUTER_UNKNOWN",
+      cause: {
+        cause: {
+          code: "econnrefused",
+        },
+      },
+    };
+
+    expect(classifyMimitCronDatabaseError(error)).toBe("connection_refused");
+  });
+
+  test("handles cause cycles and hostile getters without throwing", () => {
+    const cyclic: { cause?: unknown } = {};
+    cyclic.cause = cyclic;
+
+    const hostile = {};
+    Object.defineProperties(hostile, {
+      code: {
+        get() {
+          throw new Error("sensitive code getter");
+        },
+      },
+      cause: {
+        get() {
+          throw new Error("sensitive cause getter");
+        },
+      },
+    });
+
+    expect(classifyMimitCronDatabaseError(cyclic)).toBe("unknown");
+    expect(classifyMimitCronDatabaseError(hostile)).toBe("unknown");
+  });
+
+  test("ignores diagnostic codes inherited through Object.prototype", () => {
+    const canary = "prototype-pollution-canary";
+    Object.defineProperty(Object.prototype, "PWNED", {
+      configurable: true,
+      value: canary,
+    });
+
+    try {
+      const reason = classifyMimitCronDatabaseError({ code: "pwned" });
+
+      expect(reason).toBe("unknown");
+      expect(String(reason)).not.toContain(canary);
+    } finally {
+      delete (Object.prototype as { PWNED?: unknown }).PWNED;
+    }
   });
 });
 

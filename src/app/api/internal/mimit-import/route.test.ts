@@ -61,6 +61,42 @@ describe("internal MIMIT import route", () => {
     }
   });
 
+  test("does not evaluate database error causes for an unauthorized request", async () => {
+    const log = collectingLogger();
+    let importCalls = 0;
+    let causeReads = 0;
+    const hostileCause = {};
+    Object.defineProperty(hostileCause, "code", {
+      get() {
+        causeReads += 1;
+        throw new Error("sensitive diagnostic getter");
+      },
+    });
+    const handler = createMimitImportHandler({
+      getSecret: () => SECRET,
+      runImport: async () => {
+        importCalls += 1;
+        throw new MimitCronDatabaseUnavailableError(hostileCause);
+      },
+      logger: log.logger,
+    });
+
+    const response = await handler(
+      new Request("https://example.test/api/internal/mimit-import", {
+        headers: { authorization: "Bearer incorrect-secret" },
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      error: { code: "unauthorized", message: "Unauthorized" },
+    });
+    expect(importCalls).toBe(0);
+    expect(causeReads).toBe(0);
+    expect(log.errors).toHaveLength(0);
+    expect(log.infos).toHaveLength(0);
+  });
+
   test("returns a configuration error before importing the database adapter", async () => {
     const previousSecret = process.env.CRON_SECRET;
     const previousDatabaseUrl = process.env.DATABASE_URL;
@@ -231,10 +267,14 @@ describe("internal MIMIT import route", () => {
     const log = collectingLogger();
     const timestamps = [4_000, 4_021];
     const unsafeCause = `${SECRET}\npostgresql://user:password@example.test/db`;
+    const databaseCause = Object.assign(new Error(unsafeCause), {
+      code: "28P01",
+      canary: "diagnostic-canary-must-not-escape",
+    });
     const handler = createMimitImportHandler({
       getSecret: () => SECRET,
       runImport: async () => {
-        throw new MimitCronDatabaseUnavailableError(new Error(unsafeCause));
+        throw new MimitCronDatabaseUnavailableError(databaseCause);
       },
       logger: log.logger,
       now: () => timestamps.shift() ?? 4_021,
@@ -245,17 +285,23 @@ describe("internal MIMIT import route", () => {
 
     expect(response.status).toBe(503);
     expect(body).toEqual({
-      error: { code: "database_unavailable", message: "Service unavailable" },
+      error: {
+        code: "database_unavailable",
+        message: "Service unavailable",
+        reason: "authentication_failed",
+      },
     });
     expect(log.infos).toHaveLength(0);
     expect(log.errors).toHaveLength(1);
     expect(JSON.parse(log.errors[0]!)).toEqual({
       event: "mimit_import_database_unavailable",
       durationMs: 21,
+      reason: "authentication_failed",
     });
     const publicOutput = JSON.stringify({ body, logs: log.errors });
     expect(publicOutput).not.toContain(unsafeCause);
     expect(publicOutput).not.toContain(SECRET);
+    expect(publicOutput).not.toContain(databaseCause.canary);
   });
 
   test("returns unavailable without running an import when secret loading fails", async () => {
