@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 
 const handleImport = createMimitImportHandler({
   getSecret: () => parseCronEnv(process.env).CRON_SECRET,
+  getDatabaseUrl: () => parseRuntimeEnv(process.env).DATABASE_URL,
   runImport: async () => {
     try {
       parseRuntimeEnv(process.env);

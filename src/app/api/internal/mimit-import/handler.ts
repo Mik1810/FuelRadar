@@ -5,10 +5,14 @@ import {
   MimitCronDatabaseUnavailableError,
   type MimitCronResult,
 } from "@/server/mimit/cron-import";
-import { hasValidCronAuthorization } from "@/server/mimit/cron-auth";
+import {
+  fingerprintDatabaseUrl,
+  hasValidCronAuthorization,
+} from "@/server/mimit/cron-auth";
 
 type MimitImportHandlerDependencies = {
   getSecret: () => string;
+  getDatabaseUrl?: () => string;
   runImport: () => Promise<MimitCronResult>;
   logger: Pick<Console, "error" | "info">;
   now?: () => number;
@@ -89,11 +93,30 @@ export function createMimitImportHandler(
       }
 
       if (error instanceof MimitCronDatabaseUnavailableError) {
+        let databaseFingerprint: string | undefined;
+        try {
+          const databaseUrl = dependencies.getDatabaseUrl?.();
+          if (databaseUrl) {
+            databaseFingerprint = fingerprintDatabaseUrl(
+              databaseUrl,
+              cronSecret,
+            );
+          }
+        } catch {
+          databaseFingerprint = undefined;
+        }
+        const diagnostics = {
+          reason: error.reason,
+          ...(error.diagnosticCode
+            ? { diagnosticCode: error.diagnosticCode }
+            : {}),
+          ...(databaseFingerprint ? { databaseFingerprint } : {}),
+        };
         dependencies.logger.error(
           JSON.stringify({
             event: "mimit_import_database_unavailable",
             durationMs: now() - requestStartedAt,
-            reason: error.reason,
+            ...diagnostics,
           }),
         );
         return NextResponse.json(
@@ -101,7 +124,7 @@ export function createMimitImportHandler(
             error: {
               code: "database_unavailable",
               message: "Service unavailable",
-              reason: error.reason,
+              ...diagnostics,
             },
           },
           { status: 503 },

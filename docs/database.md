@@ -91,3 +91,16 @@ users or passwords:
 ```bash
 bun run db:verify
 ```
+
+When the authenticated import endpoint reports a database failure, it also
+returns a keyed `databaseFingerprint`. Compare it with the effective local
+configuration without printing the connection string:
+
+```bash
+bun run db:fingerprint
+```
+
+The values prove byte-for-byte equality only when both environments use the
+same `CRON_SECRET`. The fingerprint is HMAC-SHA256 rather than an unkeyed hash,
+but it should still be kept in deployment logs and issue discussions only as
+long as needed for diagnosis. Rotating `CRON_SECRET` changes the fingerprint.
