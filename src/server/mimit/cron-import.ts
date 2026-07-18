@@ -17,7 +17,7 @@ const RETRY_DELAY_MS = 250;
 const CIRCUIT_BREAKER_FAILURES = 3;
 const CIRCUIT_BREAKER_COOLDOWN_MS = 24 * 60 * 60 * 1_000;
 const RUN_LEASE_MS = 15 * 60 * 1_000;
-const MAX_DATABASE_ERROR_CAUSE_DEPTH = 8;
+const MAX_DATABASE_ERROR_NODES = 16;
 
 export type MimitCronDatabaseUnavailableReason =
   | "client_initialization_failed"
@@ -53,15 +53,38 @@ const DATABASE_ERROR_REASONS = new Map<
 
 function readErrorField(
   error: unknown,
-  field: "cause" | "code" | "message",
+  field: "cause" | "code" | "errors" | "message",
 ): unknown {
   if ((typeof error !== "object" && typeof error !== "function") || !error) {
     return undefined;
   }
   try {
+    if (!Object.prototype.hasOwnProperty.call(error, field)) return undefined;
     return Reflect.get(error, field);
   } catch {
     return undefined;
+  }
+}
+
+function isErrorObject(value: unknown): value is object | ((...args: never[]) => unknown) {
+  return (
+    value !== null && (typeof value === "object" || typeof value === "function")
+  );
+}
+
+function readArrayError(errors: unknown[], index: number): unknown {
+  try {
+    return errors[index];
+  } catch {
+    return undefined;
+  }
+}
+
+function boundedArrayLength(errors: unknown[]): number {
+  try {
+    return Math.min(errors.length, MAX_DATABASE_ERROR_NODES);
+  } catch {
+    return 0;
   }
 }
 
@@ -104,12 +127,18 @@ function reasonFromDatabaseMessage(
 export function classifyMimitCronDatabaseError(
   error: unknown,
 ): MimitCronDatabaseUnavailableReason {
-  let current: unknown = error;
-  const visited = new Set<unknown>();
+  if (!isErrorObject(error)) return "unknown";
 
-  for (let depth = 0; depth < MAX_DATABASE_ERROR_CAUSE_DEPTH; depth += 1) {
-    if (current === null || current === undefined || visited.has(current)) break;
-    visited.add(current);
+  const queue: unknown[] = [error];
+  const scheduled = new Set<unknown>([error]);
+  let messageReason: MimitCronDatabaseUnavailableReason | undefined;
+
+  for (
+    let index = 0;
+    index < queue.length && index < MAX_DATABASE_ERROR_NODES;
+    index += 1
+  ) {
+    const current = queue[index];
 
     const code = readErrorField(current, "code");
     if (typeof code === "string") {
@@ -117,14 +146,41 @@ export function classifyMimitCronDatabaseError(
       if (reason) return reason;
     }
     const message = readErrorField(current, "message");
-    if (typeof message === "string") {
-      const reason = reasonFromDatabaseMessage(message);
-      if (reason) return reason;
+    if (!messageReason && typeof message === "string") {
+      messageReason = reasonFromDatabaseMessage(message);
     }
-    current = readErrorField(current, "cause");
+
+    const schedule = (child: unknown) => {
+      if (
+        scheduled.size >= MAX_DATABASE_ERROR_NODES ||
+        !isErrorObject(child) ||
+        scheduled.has(child)
+      ) {
+        return;
+      }
+      scheduled.add(child);
+      queue.push(child);
+    };
+
+    schedule(readErrorField(current, "cause"));
+
+    const errors = readErrorField(current, "errors");
+    let isErrorsArray = false;
+    try {
+      isErrorsArray = Array.isArray(errors);
+    } catch {
+      isErrorsArray = false;
+    }
+    if (isErrorsArray) {
+      const children = errors as unknown[];
+      const limit = boundedArrayLength(children);
+      for (let childIndex = 0; childIndex < limit; childIndex += 1) {
+        schedule(readArrayError(children, childIndex));
+      }
+    }
   }
 
-  return "unknown";
+  return messageReason ?? "unknown";
 }
 
 export class MimitCronConfigurationError extends Error {
