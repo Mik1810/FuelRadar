@@ -1,5 +1,11 @@
-.expo/
-Fuel-Finder/
 node_modules/
-node_modules
+.next/
+out/
+coverage/
+.vercel/
+*.tsbuildinfo
+
+.env*
+!.env.example
+
 data/mimit/*.csv

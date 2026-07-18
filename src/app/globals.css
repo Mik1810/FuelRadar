@@ -1,0 +1,153 @@
+:root {
+  --sage-50: #f5f8f5;
+  --sage-100: #e7eee8;
+  --sage-300: #b8cbb9;
+  --sage-500: #7f9b84;
+  --sage-700: #526d58;
+  --ink: #17221a;
+  --muted: #5e6d61;
+  --surface: #ffffff;
+  --border: #dbe5dc;
+  --shadow: 0 24px 70px rgba(48, 72, 54, 0.14);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: var(--sage-50);
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top, rgba(184, 203, 185, 0.52), transparent 42%),
+    var(--sage-50);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.landing-shell {
+  display: grid;
+  min-height: 100svh;
+  place-items: center;
+  padding: max(24px, env(safe-area-inset-top)) 20px
+    max(24px, env(safe-area-inset-bottom));
+}
+
+.hero {
+  width: min(100%, 560px);
+  padding: 36px 26px;
+  border: 1px solid rgba(127, 155, 132, 0.28);
+  border-radius: 32px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+
+.brand-mark {
+  display: grid;
+  width: 112px;
+  height: 112px;
+  margin-bottom: 34px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 30px;
+  background: var(--surface);
+  box-shadow: 0 14px 36px rgba(54, 78, 59, 0.12);
+}
+
+.brand-mark img {
+  width: 82px;
+  height: 82px;
+  object-fit: contain;
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  color: var(--sage-700);
+  font-size: 0.78rem;
+  font-weight: 750;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+h1 {
+  max-width: 12ch;
+  margin: 0;
+  font-size: clamp(2.35rem, 10vw, 4.5rem);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+}
+
+.subtitle {
+  max-width: 42ch;
+  margin: 22px 0 0;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.status-card {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-top: 38px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--sage-50);
+}
+
+.status-card strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.95rem;
+}
+
+.status-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.status-dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--sage-500);
+  box-shadow: 0 0 0 3px var(--sage-300);
+}
+
+@media (min-width: 700px) {
+  .landing-shell {
+    padding: 48px;
+  }
+
+  .hero {
+    padding: 54px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
+}
