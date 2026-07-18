@@ -18,6 +18,22 @@ const CIRCUIT_BREAKER_FAILURES = 3;
 const CIRCUIT_BREAKER_COOLDOWN_MS = 24 * 60 * 60 * 1_000;
 const RUN_LEASE_MS = 15 * 60 * 1_000;
 
+export class MimitCronConfigurationError extends Error {
+  constructor(cause?: unknown) {
+    super("MIMIT cron runtime configuration is unavailable.", { cause });
+    this.name = "MimitCronConfigurationError";
+  }
+}
+
+export class MimitCronDatabaseUnavailableError extends Error {
+  constructor(cause?: unknown) {
+    super("MIMIT cron database is unavailable before the import claim.", {
+      cause,
+    });
+    this.name = "MimitCronDatabaseUnavailableError";
+  }
+}
+
 type MimitDownload = {
   stations: MimitResourceDownload;
   prices: MimitResourceDownload;
@@ -194,7 +210,11 @@ export async function runMimitCronImport(
   let claim: ClaimedRun | null = null;
   let importerStarted = false;
   try {
-    claim = await claimRun(dependencies.sql, startedAt);
+    try {
+      claim = await claimRun(dependencies.sql, startedAt);
+    } catch (error) {
+      throw new MimitCronDatabaseUnavailableError(error);
+    }
     if (!claim) {
       return {
         status: "skipped",

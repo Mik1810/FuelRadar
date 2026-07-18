@@ -8,7 +8,10 @@ import {
   MimitImportClaimLostError,
   runMimitImport,
 } from "@/server/mimit/importer";
-import { runMimitCronImport } from "@/server/mimit/cron-import";
+import {
+  MimitCronDatabaseUnavailableError,
+  runMimitCronImport,
+} from "@/server/mimit/cron-import";
 
 type QueryEvent = {
   text: string;
@@ -154,6 +157,33 @@ function deferred<T>() {
 }
 
 describe("MIMIT cron import", () => {
+  test("wraps a database failure before the claim is created", async () => {
+    const databaseCause = new Error("database connection failed");
+    let metadataCalls = 0;
+    const sql = {
+      begin: async () => {
+        throw databaseCause;
+      },
+    } as unknown as postgres.Sql;
+
+    try {
+      await runMimitCronImport({
+        sql,
+        fetchMetadata: async () => {
+          metadataCalls += 1;
+          return metadata("unused");
+        },
+        downloadDataset: neverDownload(),
+        isTransientFetchError: () => false,
+      });
+      throw new Error("Expected the cron import to fail.");
+    } catch (error) {
+      expect(error).toBeInstanceOf(MimitCronDatabaseUnavailableError);
+      expect((error as Error & { cause?: unknown }).cause).toBe(databaseCause);
+    }
+    expect(metadataCalls).toBe(0);
+  });
+
   test("returns already-running for an overlapping claimed run and cleans up its lease", async () => {
     const fake = createFakeSql({ failureCount: () => 3 });
     const metadataStarted = deferred<void>();
@@ -271,6 +301,8 @@ describe("MIMIT cron import", () => {
         },
       }),
     ).rejects.toBe(permanentError);
+
+    expect(permanentError).not.toBeInstanceOf(MimitCronDatabaseUnavailableError);
 
     expect(attempts).toBe(1);
     expect(sleeps).toBe(0);
