@@ -1,3 +1,5 @@
+import { types as nodeTypes } from "node:util";
+
 import type postgres from "postgres";
 
 import type {
@@ -78,6 +80,13 @@ const DATABASE_DIAGNOSTIC_CODES = [
 
 export type MimitCronDatabaseDiagnosticCode =
   (typeof DATABASE_DIAGNOSTIC_CODES)[number];
+
+export type MimitCronDatabaseExceptionKind =
+  | "sqlstate_shaped"
+  | "aggregate_shaped"
+  | "type_error"
+  | "error"
+  | "unrecognized";
 
 const DATABASE_DIAGNOSTIC_CODE_ALLOWLIST = new Set<string>(
   DATABASE_DIAGNOSTIC_CODES,
@@ -188,8 +197,42 @@ function reasonFromDatabaseMessage(
   return undefined;
 }
 
+function databaseExceptionKind(error: unknown): MimitCronDatabaseExceptionKind {
+  if (!isErrorObject(error)) return "unrecognized";
+
+  const errors = readErrorField(error, "errors");
+  try {
+    if (Array.isArray(errors)) return "aggregate_shaped";
+  } catch {
+    // A hostile or revoked proxy remains a bounded non-Error shape.
+  }
+
+  try {
+    if (error instanceof TypeError) return "type_error";
+  } catch {
+    return "unrecognized";
+  }
+  const code = readErrorField(error, "code");
+  if (typeof code === "string" && code.length <= 64) {
+    const normalizedCode = code.toUpperCase();
+    if (
+      /^[0-9A-Z]{5}$/.test(normalizedCode) &&
+      (reasonFromDatabaseCode(normalizedCode) !== undefined ||
+        normalizedCode === "XX000")
+    ) {
+      return "sqlstate_shaped";
+    }
+  }
+  try {
+    return nodeTypes.isNativeError(error) ? "error" : "unrecognized";
+  } catch {
+    return "unrecognized";
+  }
+}
+
 type MimitCronDatabaseDiagnostics = {
   diagnosticCode: MimitCronDatabaseDiagnosticCode | null;
+  exceptionKind: MimitCronDatabaseExceptionKind;
   reason: MimitCronDatabaseUnavailableReason;
 };
 
@@ -197,9 +240,14 @@ function inspectMimitCronDatabaseError(
   error: unknown,
 ): MimitCronDatabaseDiagnostics {
   if (!isErrorObject(error)) {
-    return { diagnosticCode: null, reason: "unknown" };
+    return {
+      diagnosticCode: null,
+      exceptionKind: "unrecognized",
+      reason: "unknown",
+    };
   }
 
+  const exceptionKind = databaseExceptionKind(error);
   const queue: unknown[] = [error];
   const scheduled = new Set<unknown>([error]);
   let diagnosticCode: MimitCronDatabaseDiagnosticCode | null = null;
@@ -222,6 +270,7 @@ function inspectMimitCronDatabaseError(
       if (reason) {
         return {
           diagnosticCode: allowedCode ?? diagnosticCode,
+          exceptionKind,
           reason,
         };
       }
@@ -264,6 +313,7 @@ function inspectMimitCronDatabaseError(
 
   return {
     diagnosticCode,
+    exceptionKind,
     reason: messageReason ?? "unknown",
   };
 }
@@ -283,6 +333,7 @@ export class MimitCronConfigurationError extends Error {
 
 export class MimitCronDatabaseUnavailableError extends Error {
   readonly diagnosticCode: MimitCronDatabaseDiagnosticCode | null;
+  readonly exceptionKind: MimitCronDatabaseExceptionKind;
   readonly reason: MimitCronDatabaseUnavailableReason;
 
   constructor(cause?: unknown, reason?: MimitCronDatabaseUnavailableReason) {
@@ -292,6 +343,7 @@ export class MimitCronDatabaseUnavailableError extends Error {
     const diagnostics = inspectMimitCronDatabaseError(cause);
     this.name = "MimitCronDatabaseUnavailableError";
     this.diagnosticCode = diagnostics.diagnosticCode;
+    this.exceptionKind = diagnostics.exceptionKind;
     this.reason = reason ?? diagnostics.reason;
   }
 }

@@ -30,6 +30,17 @@ function publicResult(result: MimitCronResult) {
   };
 }
 
+function isInstanceOf<T>(
+  value: unknown,
+  constructor: abstract new (...args: never[]) => T,
+): value is T {
+  try {
+    return value instanceof constructor;
+  } catch {
+    return false;
+  }
+}
+
 export function createMimitImportHandler(
   dependencies: MimitImportHandlerDependencies,
 ) {
@@ -74,7 +85,7 @@ export function createMimitImportHandler(
         status: result.reason === "already-running" ? 409 : 200,
       });
     } catch (error) {
-      if (error instanceof MimitCronConfigurationError) {
+      if (isInstanceOf(error, MimitCronConfigurationError)) {
         dependencies.logger.error(
           JSON.stringify({
             event: "mimit_import_configuration_error",
@@ -92,7 +103,7 @@ export function createMimitImportHandler(
         );
       }
 
-      if (error instanceof MimitCronDatabaseUnavailableError) {
+      if (isInstanceOf(error, MimitCronDatabaseUnavailableError)) {
         let databaseFingerprint: string | undefined;
         try {
           const databaseUrl = dependencies.getDatabaseUrl?.();
@@ -107,6 +118,7 @@ export function createMimitImportHandler(
         }
         const diagnostics = {
           reason: error.reason,
+          exceptionKind: error.exceptionKind,
           ...(error.diagnosticCode
             ? { diagnosticCode: error.diagnosticCode }
             : {}),
