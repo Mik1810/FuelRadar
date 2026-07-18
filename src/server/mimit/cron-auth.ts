@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 function sha256(value: string): Buffer {
   return createHash("sha256").update(value).digest();
@@ -15,4 +15,11 @@ export function hasValidCronAuthorization(
     sha256(authorization.slice(prefix.length)),
     sha256(expectedSecret),
   );
+}
+
+export function fingerprintDatabaseUrl(
+  databaseUrl: string,
+  cronSecret: string,
+): string {
+  return createHmac("sha256", cronSecret).update(databaseUrl).digest("hex");
 }

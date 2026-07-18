@@ -57,6 +57,32 @@ const DATABASE_ERROR_REASONS = new Map<
   ["EHOSTUNREACH", "network_unreachable"],
 ]);
 
+const DATABASE_DIAGNOSTIC_CODES = [
+  "28P01",
+  "28000",
+  "ETIMEDOUT",
+  "CONNECT_TIMEOUT",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "42501",
+  "3D000",
+  "ECONNRESET",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+  "42P01",
+  "42883",
+  "XX000",
+] as const;
+
+export type MimitCronDatabaseDiagnosticCode =
+  (typeof DATABASE_DIAGNOSTIC_CODES)[number];
+
+const DATABASE_DIAGNOSTIC_CODE_ALLOWLIST = new Set<string>(
+  DATABASE_DIAGNOSTIC_CODES,
+);
+
 function readErrorField(
   error: unknown,
   field: "cause" | "code" | "errors" | "message",
@@ -162,13 +188,21 @@ function reasonFromDatabaseMessage(
   return undefined;
 }
 
-export function classifyMimitCronDatabaseError(
+type MimitCronDatabaseDiagnostics = {
+  diagnosticCode: MimitCronDatabaseDiagnosticCode | null;
+  reason: MimitCronDatabaseUnavailableReason;
+};
+
+function inspectMimitCronDatabaseError(
   error: unknown,
-): MimitCronDatabaseUnavailableReason {
-  if (!isErrorObject(error)) return "unknown";
+): MimitCronDatabaseDiagnostics {
+  if (!isErrorObject(error)) {
+    return { diagnosticCode: null, reason: "unknown" };
+  }
 
   const queue: unknown[] = [error];
   const scheduled = new Set<unknown>([error]);
+  let diagnosticCode: MimitCronDatabaseDiagnosticCode | null = null;
   let messageReason: MimitCronDatabaseUnavailableReason | undefined;
 
   for (
@@ -178,10 +212,20 @@ export function classifyMimitCronDatabaseError(
   ) {
     const current = queue[index];
 
-    const code = readErrorField(current, "code");
-    if (typeof code === "string") {
+    const rawCode = readErrorField(current, "code");
+    if (typeof rawCode === "string" && rawCode.length <= 64) {
+      const code = rawCode.toUpperCase();
+      const allowedCode = DATABASE_DIAGNOSTIC_CODE_ALLOWLIST.has(code)
+        ? (code as MimitCronDatabaseDiagnosticCode)
+        : null;
       const reason = reasonFromDatabaseCode(code);
-      if (reason) return reason;
+      if (reason) {
+        return {
+          diagnosticCode: allowedCode ?? diagnosticCode,
+          reason,
+        };
+      }
+      diagnosticCode ??= allowedCode;
     }
     const message = readErrorField(current, "message");
     if (!messageReason && typeof message === "string") {
@@ -218,7 +262,16 @@ export function classifyMimitCronDatabaseError(
     }
   }
 
-  return messageReason ?? "unknown";
+  return {
+    diagnosticCode,
+    reason: messageReason ?? "unknown",
+  };
+}
+
+export function classifyMimitCronDatabaseError(
+  error: unknown,
+): MimitCronDatabaseUnavailableReason {
+  return inspectMimitCronDatabaseError(error).reason;
 }
 
 export class MimitCronConfigurationError extends Error {
@@ -229,18 +282,17 @@ export class MimitCronConfigurationError extends Error {
 }
 
 export class MimitCronDatabaseUnavailableError extends Error {
+  readonly diagnosticCode: MimitCronDatabaseDiagnosticCode | null;
   readonly reason: MimitCronDatabaseUnavailableReason;
 
-  constructor(
-    cause?: unknown,
-    reason: MimitCronDatabaseUnavailableReason =
-      classifyMimitCronDatabaseError(cause),
-  ) {
+  constructor(cause?: unknown, reason?: MimitCronDatabaseUnavailableReason) {
     super("MIMIT cron database is unavailable before the import claim.", {
       cause,
     });
+    const diagnostics = inspectMimitCronDatabaseError(cause);
     this.name = "MimitCronDatabaseUnavailableError";
-    this.reason = reason;
+    this.diagnosticCode = diagnostics.diagnosticCode;
+    this.reason = reason ?? diagnostics.reason;
   }
 }
 

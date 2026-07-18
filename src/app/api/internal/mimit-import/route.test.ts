@@ -2,6 +2,7 @@ import { describe, expect, spyOn, test } from "bun:test";
 
 import { createMimitImportHandler } from "@/app/api/internal/mimit-import/handler";
 import { GET, POST } from "@/app/api/internal/mimit-import/route";
+import { fingerprintDatabaseUrl } from "@/server/mimit/cron-auth";
 import {
   MimitCronConfigurationError,
   MimitCronDatabaseUnavailableError,
@@ -64,6 +65,7 @@ describe("internal MIMIT import route", () => {
   test("does not evaluate database error causes for an unauthorized request", async () => {
     const log = collectingLogger();
     let importCalls = 0;
+    let databaseUrlCalls = 0;
     let causeReads = 0;
     const hostileCause = {};
     Object.defineProperty(hostileCause, "code", {
@@ -74,6 +76,10 @@ describe("internal MIMIT import route", () => {
     });
     const handler = createMimitImportHandler({
       getSecret: () => SECRET,
+      getDatabaseUrl: () => {
+        databaseUrlCalls += 1;
+        return "postgresql://user:password@must-not-be-read.example/db";
+      },
       runImport: async () => {
         importCalls += 1;
         throw new MimitCronDatabaseUnavailableError(hostileCause);
@@ -92,6 +98,7 @@ describe("internal MIMIT import route", () => {
       error: { code: "unauthorized", message: "Unauthorized" },
     });
     expect(importCalls).toBe(0);
+    expect(databaseUrlCalls).toBe(0);
     expect(causeReads).toBe(0);
     expect(log.errors).toHaveLength(0);
     expect(log.infos).toHaveLength(0);
@@ -289,6 +296,7 @@ describe("internal MIMIT import route", () => {
         code: "database_unavailable",
         message: "Service unavailable",
         reason: "authentication_failed",
+        diagnosticCode: "28P01",
       },
     });
     expect(log.infos).toHaveLength(0);
@@ -297,11 +305,109 @@ describe("internal MIMIT import route", () => {
       event: "mimit_import_database_unavailable",
       durationMs: 21,
       reason: "authentication_failed",
+      diagnosticCode: "28P01",
     });
     const publicOutput = JSON.stringify({ body, logs: log.errors });
     expect(publicOutput).not.toContain(unsafeCause);
     expect(publicOutput).not.toContain(SECRET);
     expect(publicOutput).not.toContain(databaseCause.canary);
+  });
+
+  test("exposes only allowlisted diagnostics for a hostile authenticated failure", async () => {
+    const log = collectingLogger();
+    const databaseUrl =
+      "postgresql://hostile-user:hostile-password@private-db.example.test:6543/private";
+    const arbitraryCode = "HOSTILE_ARBITRARY_CODE";
+    const canary = "hostile-diagnostic-canary";
+    const hostileCause = Object.assign(
+      new Error(
+        `password=${"raw-password"} url=${databaseUrl} message=${canary}`,
+      ),
+      { code: arbitraryCode, extra: canary },
+    );
+    const expectedFingerprint = fingerprintDatabaseUrl(databaseUrl, SECRET);
+    const handler = createMimitImportHandler({
+      getSecret: () => SECRET,
+      getDatabaseUrl: () => databaseUrl,
+      runImport: async () => {
+        throw new MimitCronDatabaseUnavailableError(hostileCause);
+      },
+      logger: log.logger,
+    });
+
+    const response = await handler(authorizedRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body).toEqual({
+      error: {
+        code: "database_unavailable",
+        message: "Service unavailable",
+        reason: "authentication_failed",
+        databaseFingerprint: expectedFingerprint,
+      },
+    });
+    expect(log.errors).toHaveLength(1);
+    expect(JSON.parse(log.errors[0]!)).toMatchObject({
+      event: "mimit_import_database_unavailable",
+      reason: "authentication_failed",
+      databaseFingerprint: expectedFingerprint,
+    });
+    const publicDiagnostics = JSON.stringify({ body, logs: log.errors });
+    for (const sensitiveValue of [
+      arbitraryCode,
+      hostileCause.message,
+      databaseUrl,
+      "hostile-password",
+      "raw-password",
+      canary,
+      SECRET,
+    ]) {
+      expect(publicDiagnostics).not.toContain(sensitiveValue);
+    }
+  });
+
+  test("exposes allowlisted XX000 only alongside the database fingerprint", async () => {
+    const log = collectingLogger();
+    const databaseUrl =
+      "postgresql://safe-user:private-password@pooler.example.test:6543/postgres";
+    const causeCanary = "xx000-cause-canary";
+    const cause = Object.assign(new Error(causeCanary), { code: "XX000" });
+    const databaseFingerprint = fingerprintDatabaseUrl(databaseUrl, SECRET);
+    const handler = createMimitImportHandler({
+      getSecret: () => SECRET,
+      getDatabaseUrl: () => databaseUrl,
+      runImport: async () => {
+        throw new MimitCronDatabaseUnavailableError(cause);
+      },
+      logger: log.logger,
+    });
+
+    const response = await handler(authorizedRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body).toEqual({
+      error: {
+        code: "database_unavailable",
+        message: "Service unavailable",
+        reason: "unknown",
+        diagnosticCode: "XX000",
+        databaseFingerprint,
+      },
+    });
+    expect(log.errors).toHaveLength(1);
+    expect(JSON.parse(log.errors[0]!)).toMatchObject({
+      event: "mimit_import_database_unavailable",
+      reason: "unknown",
+      diagnosticCode: "XX000",
+      databaseFingerprint,
+    });
+    const publicDiagnostics = JSON.stringify({ body, logs: log.errors });
+    expect(publicDiagnostics).not.toContain(databaseUrl);
+    expect(publicDiagnostics).not.toContain("private-password");
+    expect(publicDiagnostics).not.toContain(causeCanary);
+    expect(publicDiagnostics).not.toContain(SECRET);
   });
 
   test("returns the pooler circuit reason in the bounded database contract", async () => {

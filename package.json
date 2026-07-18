@@ -20,6 +20,7 @@
     "db:push:dry": "SUPABASE_TELEMETRY_DISABLED=1 supabase db push --dry-run",
     "db:push": "SUPABASE_TELEMETRY_DISABLED=1 supabase db push",
     "db:verify": "bun run scripts/check-database-connection.ts",
+    "db:fingerprint": "bun run scripts/fingerprint-database-url.ts",
     "import:mimit": "bun run scripts/import-mimit.ts",
     "import:mimit:local": "bun run scripts/import-mimit-local.ts",
     "analyze:mimit": "bun run scripts/analyze-mimit-data.ts",
