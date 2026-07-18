@@ -338,6 +338,40 @@ describe("internal MIMIT import route", () => {
     );
   });
 
+  test("returns only the safe tenant reason for a Supavisor tenant failure", async () => {
+    const log = collectingLogger();
+    const tenantCanary = "sensitive-tenant-reference";
+    const handler = createMimitImportHandler({
+      getSecret: () => SECRET,
+      runImport: async () => {
+        throw new MimitCronDatabaseUnavailableError(
+          new Error(`Tenant or user not found: ${tenantCanary}`),
+        );
+      },
+      logger: log.logger,
+    });
+
+    const response = await handler(authorizedRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body).toEqual({
+      error: {
+        code: "database_unavailable",
+        message: "Service unavailable",
+        reason: "pooler_tenant_not_found",
+      },
+    });
+    expect(log.errors).toHaveLength(1);
+    expect(JSON.parse(log.errors[0]!)).toMatchObject({
+      event: "mimit_import_database_unavailable",
+      reason: "pooler_tenant_not_found",
+    });
+    expect(JSON.stringify({ body, logs: log.errors })).not.toContain(
+      tenantCanary,
+    );
+  });
+
   test("returns unavailable without running an import when secret loading fails", async () => {
     const log = collectingLogger();
     const timestamps = [2_000, 2_009];
