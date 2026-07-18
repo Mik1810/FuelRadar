@@ -472,6 +472,148 @@ describe("MIMIT database diagnostics", () => {
     expect(error.reason).toBe("client_initialization_failed");
   });
 
+  test("classifies supported codes from AggregateError children", () => {
+    expect(
+      classifyMimitCronDatabaseError(
+        new AggregateError([{ code: "ETIMEDOUT" }]),
+      ),
+    ).toBe("connection_timeout");
+    expect(
+      classifyMimitCronDatabaseError(
+        new AggregateError([{ code: "ENOTFOUND" }]),
+      ),
+    ).toBe("dns_failed");
+  });
+
+  test("prefers any aggregate child code over message fallbacks", () => {
+    const error = new AggregateError(
+      [{ code: "28P01" }],
+      "connection timed out while opening the wrapper",
+    );
+
+    expect(classifyMimitCronDatabaseError(error)).toBe(
+      "authentication_failed",
+    );
+  });
+
+  test("keeps the first message candidate when no code is classified", () => {
+    const error = new AggregateError(
+      [{ message: "password authentication failed" }],
+      "connection timed out while opening the wrapper",
+    );
+
+    expect(classifyMimitCronDatabaseError(error)).toBe("connection_timeout");
+  });
+
+  test("visits a cause before aggregate children at the same level", () => {
+    const error = Object.assign(
+      new AggregateError([{ code: "ETIMEDOUT" }]),
+      { cause: { code: "ENOTFOUND" } },
+    );
+
+    expect(classifyMimitCronDatabaseError(error)).toBe("dns_failed");
+  });
+
+  test("deduplicates aggregate children and terminates cycles", () => {
+    const child = { code: "ECONNREFUSED" };
+    const error = new AggregateError([] as unknown[]);
+    error.errors.push(error, child, child);
+    Object.defineProperty(error, "cause", { value: error });
+
+    expect(classifyMimitCronDatabaseError(error)).toBe("connection_refused");
+  });
+
+  test("finds a child within the sixteen-node cap and ignores the seventeenth node", () => {
+    const withinCap = Array.from({ length: 14 }, () => ({
+      code: "UNMAPPED",
+    }));
+    withinCap.push({ code: "ETIMEDOUT" });
+    const beyondCap = Array.from({ length: 15 }, () => ({
+      code: "UNMAPPED",
+    }));
+    beyondCap.push({ code: "ETIMEDOUT" });
+
+    expect(
+      classifyMimitCronDatabaseError(new AggregateError(withinCap)),
+    ).toBe("connection_timeout");
+    expect(
+      classifyMimitCronDatabaseError(new AggregateError(beyondCap)),
+    ).toBe("unknown");
+  });
+
+  test("bounds traversal to sixteen error objects", () => {
+    let error: Record<string, unknown> = { code: "ENOTFOUND" };
+    for (let index = 0; index < 16; index += 1) {
+      error = { cause: error };
+    }
+
+    expect(classifyMimitCronDatabaseError(error)).toBe("unknown");
+  });
+
+  test("handles hostile aggregate collections without throwing", () => {
+    const errorsGetter = {};
+    Object.defineProperty(errorsGetter, "errors", {
+      get() {
+        throw new Error("hostile errors getter");
+      },
+    });
+
+    const revoked = Proxy.revocable([], {});
+    revoked.revoke();
+    const revokedErrors = { errors: revoked.proxy };
+
+    const hostileLength = {
+      errors: new Proxy([], {
+        get(target, property, receiver) {
+          if (property === "length") throw new Error("hostile length");
+          return Reflect.get(target, property, receiver);
+        },
+      }),
+    };
+    const hostileItem = {
+      errors: new Proxy([{}], {
+        get(target, property, receiver) {
+          if (property === "0") throw new Error("hostile item");
+          return Reflect.get(target, property, receiver);
+        },
+      }),
+    };
+
+    for (const error of [
+      errorsGetter,
+      revokedErrors,
+      hostileLength,
+      hostileItem,
+    ]) {
+      expect(classifyMimitCronDatabaseError(error)).toBe("unknown");
+    }
+  });
+
+  test("ignores primitive roots and aggregate children", () => {
+    for (const primitive of [null, undefined, false, 0, "ETIMEDOUT"]) {
+      expect(classifyMimitCronDatabaseError(primitive)).toBe("unknown");
+    }
+    expect(
+      classifyMimitCronDatabaseError(
+        new AggregateError([null, undefined, false, 0, "ENOTFOUND"]),
+      ),
+    ).toBe("unknown");
+
+    let itemReads = 0;
+    const manyPrimitives = new Proxy(Array<unknown>(100).fill(null), {
+      get(target, property, receiver) {
+        if (typeof property === "string" && /^\d+$/.test(property)) {
+          itemReads += 1;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    expect(
+      classifyMimitCronDatabaseError({ errors: manyPrimitives }),
+    ).toBe("unknown");
+    expect(itemReads).toBe(16);
+  });
+
   test("handles cause cycles and hostile getters without throwing", () => {
     const cyclic: { cause?: unknown } = {};
     cyclic.cause = cyclic;
@@ -500,6 +642,51 @@ describe("MIMIT database diagnostics", () => {
     const hostileReason = classifyMimitCronDatabaseError(hostile);
     expect(hostileReason).toBe("unknown");
     expect(String(hostileReason)).not.toContain(messageCanary);
+  });
+
+  test("ignores inherited diagnostic fields on a plain object", () => {
+    const canary = "inherited-diagnostics-canary";
+    Object.defineProperties(Object.prototype, {
+      code: { configurable: true, value: "28P01" },
+      message: { configurable: true, value: `${canary} timed out` },
+      cause: {
+        configurable: true,
+        value: { code: "ENOTFOUND", canary },
+      },
+      errors: {
+        configurable: true,
+        value: [{ code: "ECONNREFUSED", canary }],
+      },
+    });
+
+    try {
+      const reason = classifyMimitCronDatabaseError({});
+
+      expect(reason).toBe("unknown");
+      expect(String(reason)).not.toContain(canary);
+    } finally {
+      for (const field of ["code", "message", "cause", "errors"] as const) {
+        delete (Object.prototype as Record<string, unknown>)[field];
+      }
+    }
+  });
+
+  test("continues to inspect standard Error own fields", () => {
+    const messageError = new Error("connection timed out");
+    const causeError = new Error("outer failure", {
+      cause: Object.assign(new Error("inner failure"), { code: "ENOTFOUND" }),
+    });
+    const codeError = Object.assign(new Error("generic failure"), {
+      code: "28P01",
+    });
+
+    expect(classifyMimitCronDatabaseError(messageError)).toBe(
+      "connection_timeout",
+    );
+    expect(classifyMimitCronDatabaseError(causeError)).toBe("dns_failed");
+    expect(classifyMimitCronDatabaseError(codeError)).toBe(
+      "authentication_failed",
+    );
   });
 
   test("ignores diagnostic codes inherited through Object.prototype", () => {
