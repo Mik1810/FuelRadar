@@ -10,7 +10,6 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "analyze:mimit": "bun run scripts/analyze-mimit-data.ts",
-    "generate:mimit-sample": "bun run scripts/generate-mimit-sample.ts",
     "query:nearby": "bun run scripts/query-mimit-nearby.ts"
   },
   "dependencies": {

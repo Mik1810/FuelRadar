@@ -31,8 +31,8 @@ Observed file sizes:
 - `prezzo_alle_8.csv`: about 3.8 MB;
 - `anagrafica_impianti_attivi.csv`: about 3.5 MB.
 
-This is small enough to validate a direct on-device import before adding a
-backend.
+The web application does not download these files in the browser. A server-side
+import pipeline downloads and validates them before publishing a new dataset.
 
 ## Current Format
 
@@ -157,30 +157,36 @@ Reason:
 - filtering strictly on same-day `dtComu` hides too many valid stations,
   especially for GPL and metano self-service.
 
-## Refresh Strategy
+## Parser Boundaries
 
-On app startup:
+- `src/domain/` contains the canonical FuelRadar model and pure MIMIT parsing;
+  it can be imported by browser or server code and has no framework dependency.
+- `src/server/mimit/` owns network access to the MIMIT endpoints and is marked
+  server-only.
+- malformed files fail with a typed diagnostic error;
+- extra columns are accepted for forward compatibility;
+- known unescaped `|` characters in `Nome Impianto` are reconstructed and
+  counted, while other malformed row shapes still fail;
+- unsupported fuels, invalid coordinates, service modes, prices and `dtComu`
+  values are skipped and counted explicitly in import diagnostics.
 
-- check local dataset metadata;
-- request remote headers for both CSV files;
-- compare `ETag` and `Last-Modified` when available;
-- skip download if both local and remote metadata indicate unchanged data;
-- download and import only when data changed.
+The MIMIT `dtComu` value has no timezone in the source. It is normalized as an
+Italian local civil time (`YYYY-MM-DDTHH:mm:ss`) without incorrectly labelling it
+as UTC. The database import is responsible for applying `Europe/Rome` when a
+timezone-aware value is needed.
 
-Manual refresh:
+## Refresh and Publication Strategy
 
-- use the same metadata-aware flow;
-- never delete the last valid local dataset before the new import succeeds.
+The scheduled server import should:
 
-Offline behavior:
+- request metadata for both resources and compare `ETag` and `Last-Modified`
+  when available;
+- skip the download when the published resources are unchanged;
+- download both files and require matching extraction dates;
+- parse and validate the complete pair before changing active data;
+- keep the last successfully published dataset available after any failure.
 
-- use the last valid local dataset;
-- show the extraction date clearly;
-- show a clear error state if no local dataset exists yet.
-
-## SQLite Import Notes
-
-The import should be staged:
+The database import should be staged:
 
 - download files;
 - parse extraction date and headers;
@@ -189,7 +195,8 @@ The import should be staged:
 - reject unsupported fuels;
 - reject invalid prices;
 - reject map rows with invalid coordinates;
-- write into staging tables;
+- write into PostgreSQL/PostGIS staging tables in the isolated `fuelradar`
+  schema;
 - swap staging data into active tables only after the import succeeds.
 
 Suggested tables:
@@ -197,13 +204,11 @@ Suggested tables:
 - `datasets`;
 - `stations`;
 - `prices`;
-- `favorite_places`;
-- `favorite_stations`;
-- `settings`.
+- dataset import diagnostics.
 
 ## Open Risks
 
-- Direct on-device import may still be too slow on older phones.
+- The upstream schema or separator may change again and must be monitored.
 - `dtComu` can be older than the extraction date, so the UI must avoid implying
   that every displayed price was communicated on the dataset date.
 - MIMIT file format can change; parser should validate headers before import.

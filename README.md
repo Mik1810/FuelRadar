@@ -3,7 +3,7 @@
 FuelRadar is a mobile-first web application for finding fuel stations and
 comparing official fuel prices in Italy.
 
-The project is being migrated from Expo/React Native to a web-first stack:
+The project uses a web-first stack:
 
 - Next.js and TypeScript;
 - Supabase PostgreSQL with PostGIS;
@@ -29,6 +29,7 @@ Open [http://localhost:3000](http://localhost:3000).
 ```bash
 bun run lint
 bun run typecheck
+bun test
 bun run build
 ```
 
