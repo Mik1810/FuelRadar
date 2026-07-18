@@ -11,6 +11,7 @@ Supabase directly from the browser.
 - `MIGRATION_DATABASE_URL` is used only by local migration tooling. Use the
   direct connection when IPv6 is available, otherwise the session pooler on
   port `5432`.
+- `LOCAL_DATABASE_URL` points only to the native PostgreSQL instance in WSL.
 - `CRON_SECRET` authenticates the future import endpoint and is unrelated to
   database access.
 
@@ -30,16 +31,25 @@ cp .env.example .env.local
 Fill `.env.local` with the connection strings from the Supabase **Connect**
 panel. Do not commit that file.
 
-The optional full local Supabase stack requires Docker:
+Local development uses PostgreSQL 17, PostGIS and pgTAP installed directly in
+WSL. Docker and the local Supabase stack are not required. After the one-time
+package installation and creation of the local `fuelradar` superuser, use:
 
 ```bash
-bun run db:start
 bun run db:reset
+bun run db:start
+bun run db:test
+bun run db:test:import
+bun run db:explain
+bun run import:mimit:local
 ```
 
-`db:reset` deletes and recreates only the local Supabase database.
-When using Docker Desktop on Windows, enable WSL integration for the distro that
-runs this repository before starting the local stack.
+The default development connection is
+`postgresql://fuelradar:fuelradar@127.0.0.1:5432/fuelradar_local`. This is an
+intentionally public local-only credential and must never be reused in
+production. `db:reset` recreates only `fuelradar_local`, applies every committed
+migration in order and loads `supabase/seed.sql`. PostgreSQL itself is managed
+by systemd (`systemctl status postgresql`).
 
 ## Schema changes
 
