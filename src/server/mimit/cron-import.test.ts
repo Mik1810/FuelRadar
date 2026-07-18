@@ -388,6 +388,12 @@ describe("MIMIT database diagnostics", () => {
       ["42501", "permission_denied"],
       ["3D000", "database_not_found"],
       ["ECONNRESET", "connection_reset"],
+      ["08006", "connection_failure"],
+      ["53300", "resource_exhausted"],
+      ["57P01", "server_unavailable"],
+      ["58000", "server_unavailable"],
+      ["42P01", "schema_unavailable"],
+      ["42883", "unsupported_database_feature"],
     ] as const;
 
     for (const [code, reason] of cases) {
@@ -411,11 +417,67 @@ describe("MIMIT database diagnostics", () => {
     expect(classifyMimitCronDatabaseError(error)).toBe("connection_refused");
   });
 
+  test("classifies postgres.js message-only failures", () => {
+    const cases = [
+      ["connect_timeout reached while opening a socket", "connection_timeout"],
+      ["connection timed out", "connection_timeout"],
+      ["getaddrinfo ENOTFOUND db.example.test", "dns_failed"],
+      ["password authentication failed for user", "authentication_failed"],
+      ["connect ECONNREFUSED 127.0.0.1:5432", "connection_refused"],
+      ["connection reset by peer", "connection_reset"],
+    ] as const;
+
+    for (const [message, reason] of cases) {
+      expect(classifyMimitCronDatabaseError({ message })).toBe(reason);
+    }
+    expect(
+      classifyMimitCronDatabaseError({
+        code: "UNMAPPED",
+        message: "getaddrinfo ENOTFOUND db.example.test",
+      }),
+    ).toBe("dns_failed");
+    const oversizedCode = "X".repeat(65);
+    expect(
+      classifyMimitCronDatabaseError({
+        code: oversizedCode,
+        message: "connection reset by peer",
+      }),
+    ).toBe("connection_reset");
+    expect(classifyMimitCronDatabaseError({ code: oversizedCode })).toBe(
+      "unknown",
+    );
+  });
+
+  test("prefers a specific code mapping over a conflicting message", () => {
+    expect(
+      classifyMimitCronDatabaseError({
+        code: "ECONNREFUSED",
+        message: "password authentication failed after a timeout",
+      }),
+    ).toBe("connection_refused");
+    expect(
+      classifyMimitCronDatabaseError({
+        code: "08006",
+        message: "password authentication failed",
+      }),
+    ).toBe("connection_failure");
+  });
+
+  test("allows client initialization to force its dedicated reason", () => {
+    const error = new MimitCronDatabaseUnavailableError(
+      { code: "28P01" },
+      "client_initialization_failed",
+    );
+
+    expect(error.reason).toBe("client_initialization_failed");
+  });
+
   test("handles cause cycles and hostile getters without throwing", () => {
     const cyclic: { cause?: unknown } = {};
     cyclic.cause = cyclic;
 
     const hostile = {};
+    const messageCanary = "hostile-message-canary";
     Object.defineProperties(hostile, {
       code: {
         get() {
@@ -427,10 +489,17 @@ describe("MIMIT database diagnostics", () => {
           throw new Error("sensitive cause getter");
         },
       },
+      message: {
+        get() {
+          throw new Error(messageCanary);
+        },
+      },
     });
 
     expect(classifyMimitCronDatabaseError(cyclic)).toBe("unknown");
-    expect(classifyMimitCronDatabaseError(hostile)).toBe("unknown");
+    const hostileReason = classifyMimitCronDatabaseError(hostile);
+    expect(hostileReason).toBe("unknown");
+    expect(String(hostileReason)).not.toContain(messageCanary);
   });
 
   test("ignores diagnostic codes inherited through Object.prototype", () => {
