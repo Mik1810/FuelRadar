@@ -1,7 +1,44 @@
 # FuelRadar
 
-to execute on development environment:
+FuelRadar is a mobile-first web application for finding fuel stations and
+comparing official fuel prices in Italy.
+
+The project is being migrated from Expo/React Native to a web-first stack:
+
+- Next.js and TypeScript;
+- Supabase PostgreSQL with PostGIS;
+- Vercel hosting and scheduled MIMIT imports;
+- React Leaflet with OpenStreetMap data;
+- browser-local preferences, favorites, and last known position.
+
+## Requirements
+
+- Bun 1.3 or newer.
+
+## Local development
 
 ```bash
-bunx expo start --tunnel --clear
+bun install
+bun run dev
 ```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+## Checks
+
+```bash
+bun run lint
+bun run typecheck
+bun run build
+```
+
+## Environment
+
+Copy `.env.example` to `.env.local` and fill in the server-only values.
+Never commit `.env.local` or expose database credentials through variables
+prefixed with `NEXT_PUBLIC_`.
+
+## Data source
+
+FuelRadar uses the official daily MIMIT station registry and price datasets.
+See `DATA_SOURCE.md` for the current format and normalization rules.
