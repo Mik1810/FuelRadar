@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
-import type { MimitCronResult } from "@/server/mimit/cron-import";
+import {
+  MimitCronConfigurationError,
+  MimitCronDatabaseUnavailableError,
+  type MimitCronResult,
+} from "@/server/mimit/cron-import";
 import { hasValidCronAuthorization } from "@/server/mimit/cron-auth";
 
 type MimitImportHandlerDependencies = {
@@ -65,7 +69,43 @@ export function createMimitImportHandler(
       return NextResponse.json(payload, {
         status: result.reason === "already-running" ? 409 : 200,
       });
-    } catch {
+    } catch (error) {
+      if (error instanceof MimitCronConfigurationError) {
+        dependencies.logger.error(
+          JSON.stringify({
+            event: "mimit_import_configuration_error",
+            durationMs: now() - requestStartedAt,
+          }),
+        );
+        return NextResponse.json(
+          {
+            error: {
+              code: "service_unavailable",
+              message: "Service unavailable",
+            },
+          },
+          { status: 503 },
+        );
+      }
+
+      if (error instanceof MimitCronDatabaseUnavailableError) {
+        dependencies.logger.error(
+          JSON.stringify({
+            event: "mimit_import_database_unavailable",
+            durationMs: now() - requestStartedAt,
+          }),
+        );
+        return NextResponse.json(
+          {
+            error: {
+              code: "database_unavailable",
+              message: "Service unavailable",
+            },
+          },
+          { status: 503 },
+        );
+      }
+
       dependencies.logger.error(
         JSON.stringify({
           event: "mimit_import_failed",

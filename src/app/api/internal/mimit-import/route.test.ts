@@ -1,7 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 
 import { createMimitImportHandler } from "@/app/api/internal/mimit-import/handler";
 import { GET, POST } from "@/app/api/internal/mimit-import/route";
+import {
+  MimitCronConfigurationError,
+  MimitCronDatabaseUnavailableError,
+} from "@/server/mimit/cron-import";
 
 const SECRET = "route-test-secret-that-is-at-least-32-characters";
 
@@ -28,7 +32,9 @@ function collectingLogger() {
 describe("internal MIMIT import route", () => {
   test("rejects unauthorized GET and POST requests before server import wiring", async () => {
     const previousSecret = process.env.CRON_SECRET;
+    const previousDatabaseUrl = process.env.DATABASE_URL;
     process.env.CRON_SECRET = SECRET;
+    delete process.env.DATABASE_URL;
 
     try {
       for (const [handler, authorization] of [
@@ -50,6 +56,35 @@ describe("internal MIMIT import route", () => {
     } finally {
       if (previousSecret === undefined) delete process.env.CRON_SECRET;
       else process.env.CRON_SECRET = previousSecret;
+      if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previousDatabaseUrl;
+    }
+  });
+
+  test("returns a configuration error before importing the database adapter", async () => {
+    const previousSecret = process.env.CRON_SECRET;
+    const previousDatabaseUrl = process.env.DATABASE_URL;
+    const errorLog = spyOn(console, "error").mockImplementation(() => {});
+    process.env.CRON_SECRET = SECRET;
+    delete process.env.DATABASE_URL;
+
+    try {
+      const response = await POST(authorizedRequest());
+
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({
+        error: { code: "service_unavailable", message: "Service unavailable" },
+      });
+      expect(errorLog).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(String(errorLog.mock.calls[0]?.[0]))).toMatchObject({
+        event: "mimit_import_configuration_error",
+      });
+    } finally {
+      errorLog.mockRestore();
+      if (previousSecret === undefined) delete process.env.CRON_SECRET;
+      else process.env.CRON_SECRET = previousSecret;
+      if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previousDatabaseUrl;
     }
   });
 
@@ -159,6 +194,68 @@ describe("internal MIMIT import route", () => {
     expect(publicOutput).not.toContain(unsafeUrl);
     expect(publicOutput).not.toContain("upstream details");
     expect(publicOutput).not.toContain("\n");
+  });
+
+  test("maps a runtime configuration error to unavailable without exposing its cause", async () => {
+    const log = collectingLogger();
+    const timestamps = [3_000, 3_012];
+    const unsafeCause = `${SECRET}\npostgresql://user:password@example.test/db`;
+    const handler = createMimitImportHandler({
+      getSecret: () => SECRET,
+      runImport: async () => {
+        throw new MimitCronConfigurationError(new Error(unsafeCause));
+      },
+      logger: log.logger,
+      now: () => timestamps.shift() ?? 3_012,
+    });
+
+    const response = await handler(authorizedRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body).toEqual({
+      error: { code: "service_unavailable", message: "Service unavailable" },
+    });
+    expect(log.infos).toHaveLength(0);
+    expect(log.errors).toHaveLength(1);
+    expect(JSON.parse(log.errors[0]!)).toEqual({
+      event: "mimit_import_configuration_error",
+      durationMs: 12,
+    });
+    const publicOutput = JSON.stringify({ body, logs: log.errors });
+    expect(publicOutput).not.toContain(unsafeCause);
+    expect(publicOutput).not.toContain(SECRET);
+  });
+
+  test("maps a database startup failure to database unavailable without exposing its cause", async () => {
+    const log = collectingLogger();
+    const timestamps = [4_000, 4_021];
+    const unsafeCause = `${SECRET}\npostgresql://user:password@example.test/db`;
+    const handler = createMimitImportHandler({
+      getSecret: () => SECRET,
+      runImport: async () => {
+        throw new MimitCronDatabaseUnavailableError(new Error(unsafeCause));
+      },
+      logger: log.logger,
+      now: () => timestamps.shift() ?? 4_021,
+    });
+
+    const response = await handler(authorizedRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body).toEqual({
+      error: { code: "database_unavailable", message: "Service unavailable" },
+    });
+    expect(log.infos).toHaveLength(0);
+    expect(log.errors).toHaveLength(1);
+    expect(JSON.parse(log.errors[0]!)).toEqual({
+      event: "mimit_import_database_unavailable",
+      durationMs: 21,
+    });
+    const publicOutput = JSON.stringify({ body, logs: log.errors });
+    expect(publicOutput).not.toContain(unsafeCause);
+    expect(publicOutput).not.toContain(SECRET);
   });
 
   test("returns unavailable without running an import when secret loading fails", async () => {
