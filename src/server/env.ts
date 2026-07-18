@@ -1,6 +1,9 @@
 import "server-only";
 
-import { parseMigrationEnv, parseRuntimeEnv } from "@/config/server-env";
+import {
+  parseMigrationEnv,
+  parseRuntimeEnv,
+} from "@/config/server-env";
 
 export function getRuntimeEnv() {
   return parseRuntimeEnv(process.env);

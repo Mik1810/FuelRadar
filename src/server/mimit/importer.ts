@@ -11,8 +11,15 @@ import type {
   MimitResourceDownload,
 } from "@/domain/mimit/source";
 
-const IMPORT_LOCK_KEY = "fuelradar:mimit-import:v1";
+export const IMPORT_LOCK_KEY = "fuelradar:mimit-import:v1";
 const INSERT_CHUNK_SIZE = 2_000;
+
+export class MimitImportClaimLostError extends Error {
+  constructor() {
+    super("MIMIT import claim is no longer active.");
+    this.name = "MimitImportClaimLostError";
+  }
+}
 
 export type MimitImportStatus = "succeeded" | "skipped";
 
@@ -27,7 +34,7 @@ export type MimitImportResult = {
 };
 
 export type MimitImportDependencies = {
-  sql: postgres.Sql;
+  sql: postgres.Sql | postgres.TransactionSql;
   fetchMetadata: () => Promise<MimitDatasetMetadata>;
   downloadDataset: () => Promise<{
     stations: MimitResourceDownload;
@@ -35,13 +42,19 @@ export type MimitImportDependencies = {
   }>;
   now?: () => Date;
   beforeActivation?: (datasetId: string) => Promise<void>;
+  claimedRun?: {
+    id: string;
+    startedAt: Date;
+  };
 };
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function metadataFingerprint(metadata: MimitDatasetMetadata): string | null {
+export function getMimitMetadataFingerprint(
+  metadata: MimitDatasetMetadata,
+): string | null {
   const versions = [metadata.stations, metadata.prices].map((resource) => {
     if (!resource.etag && !resource.lastModified) return null;
     return {
@@ -53,6 +66,24 @@ function metadataFingerprint(metadata: MimitDatasetMetadata): string | null {
   });
 
   return versions.every(Boolean) ? sha256(JSON.stringify(versions)) : null;
+}
+
+export function getMimitCircuitFingerprint(
+  metadata: MimitDatasetMetadata,
+): string {
+  const strongFingerprint = getMimitMetadataFingerprint(metadata);
+  if (strongFingerprint) return strongFingerprint;
+
+  return sha256(
+    JSON.stringify(
+      [metadata.stations, metadata.prices].map((resource) => ({
+        name: resource.name,
+        url: resource.url,
+        contentLength: resource.contentLength,
+        contentType: resource.contentType,
+      })),
+    ),
+  );
 }
 
 function contentFingerprint(download: {
@@ -91,6 +122,14 @@ function chunks<T>(values: T[]): T[][] {
     result.push(values.slice(index, index + INSERT_CHUNK_SIZE));
   }
   return result;
+}
+
+async function inActivationTransaction<T>(
+  sql: postgres.Sql | postgres.TransactionSql,
+  callback: (transaction: postgres.TransactionSql) => Promise<T>,
+): Promise<T> {
+  if ("begin" in sql) return (await sql.begin(callback)) as T;
+  return (await sql.savepoint(callback)) as T;
 }
 
 async function insertStations(
@@ -199,7 +238,7 @@ async function finishSkippedRun(input: {
     ? ("content-unchanged" as const)
     : ("metadata-unchanged" as const);
 
-  await input.sql`
+  const [updated] = await input.sql<{ id: string }[]>`
     update fuelradar.import_runs
     set status = 'skipped',
         finished_at = ${finishedAt},
@@ -208,10 +247,15 @@ async function finishSkippedRun(input: {
         source_etag = ${combinedHeader(input.metadata, "etag")},
         source_last_modified = ${combinedHeader(input.metadata, "lastModified")},
         source_fingerprint = ${input.sourceFingerprint ?? null},
-        metadata_fingerprint = ${input.metadataFingerprint},
+        metadata_fingerprint = coalesce(
+          ${input.metadataFingerprint},
+          metadata_fingerprint
+        ),
         source_metadata = ${input.sql.json(input.metadata)}
-    where id = ${input.runId}::bigint
+    where id = ${input.runId}::bigint and status = 'running'
+    returning id
   `;
+  if (!updated) throw new MimitImportClaimLostError();
 
   return {
     runId: input.runId,
@@ -228,27 +272,32 @@ export async function runMimitImport(
   dependencies: MimitImportDependencies,
 ): Promise<MimitImportResult> {
   const now = dependencies.now ?? (() => new Date());
-  const startedAt = now();
-  const [run] = await dependencies.sql<{ id: string }[]>`
-    insert into fuelradar.import_runs (status, started_at)
-    values ('running', ${startedAt})
-    returning id
-  `;
+  const startedAt = dependencies.claimedRun?.startedAt ?? now();
+  const [createdRun] = dependencies.claimedRun
+    ? [dependencies.claimedRun]
+    : await dependencies.sql<{ id: string }[]>`
+        insert into fuelradar.import_runs (status, started_at)
+        values ('running', ${startedAt})
+        returning id
+      `;
+  const run = createdRun;
 
   if (!run) throw new Error("Unable to create the MIMIT import run.");
 
   try {
     const metadata = await dependencies.fetchMetadata();
-    const metadataHash = metadataFingerprint(metadata);
+    const metadataHash = getMimitMetadataFingerprint(metadata);
 
-    await dependencies.sql`
+    const [metadataUpdated] = await dependencies.sql<{ id: string }[]>`
       update fuelradar.import_runs
       set source_etag = ${combinedHeader(metadata, "etag")},
           source_last_modified = ${combinedHeader(metadata, "lastModified")},
-          metadata_fingerprint = ${metadataHash},
+          metadata_fingerprint = coalesce(${metadataHash}, metadata_fingerprint),
           source_metadata = ${dependencies.sql.json(metadata)}
-      where id = ${run.id}::bigint
+      where id = ${run.id}::bigint and status = 'running'
+      returning id
     `;
+    if (!metadataUpdated) throw new MimitImportClaimLostError();
 
     if (metadataHash) {
       const [unchanged] = await dependencies.sql<{ id: string }[]>`
@@ -277,19 +326,31 @@ export async function runMimitImport(
     });
     const sourceHash = contentFingerprint(download);
 
-    await dependencies.sql`
+    const [contentUpdated] = await dependencies.sql<{ id: string }[]>`
       update fuelradar.import_runs
       set source_fingerprint = ${sourceHash},
           station_count = ${parsed.dataset.stations.length},
           price_count = ${parsed.dataset.prices.length},
           diagnostics = ${dependencies.sql.json(parsed.diagnostics)}
-      where id = ${run.id}::bigint
+      where id = ${run.id}::bigint and status = 'running'
+      returning id
     `;
+    if (!contentUpdated) throw new MimitImportClaimLostError();
 
-    return await dependencies.sql.begin(async (transaction) => {
+    return await inActivationTransaction(dependencies.sql, async (transaction) => {
       await transaction`
         select pg_advisory_xact_lock(hashtextextended(${IMPORT_LOCK_KEY}, 0))
       `;
+
+      if (dependencies.claimedRun) {
+        const [activeClaim] = await transaction<{ id: string }[]>`
+          select id
+          from fuelradar.import_runs
+          where id = ${run.id}::bigint and status = 'running'
+          for update
+        `;
+        if (!activeClaim) throw new MimitImportClaimLostError();
+      }
 
       const [unchanged] = await transaction<{ id: string }[]>`
         select id
@@ -356,7 +417,7 @@ export async function runMimitImport(
 
       const finishedAt = now();
       const durationMs = Math.max(0, finishedAt.getTime() - startedAt.getTime());
-      await transaction`
+      const [succeeded] = await transaction<{ id: string }[]>`
         update fuelradar.import_runs
         set status = 'succeeded',
             finished_at = ${finishedAt},
@@ -370,8 +431,10 @@ export async function runMimitImport(
             station_count = ${dataset.stations.length},
             price_count = ${dataset.prices.length},
             diagnostics = ${transaction.json(parsed.diagnostics)}
-        where id = ${run.id}::bigint
+        where id = ${run.id}::bigint and status = 'running'
+        returning id
       `;
+      if (!succeeded) throw new MimitImportClaimLostError();
 
       return {
         runId: run.id,
@@ -384,14 +447,18 @@ export async function runMimitImport(
     });
   } catch (error) {
     const finishedAt = now();
-    await dependencies.sql`
+    const [failed] = await dependencies.sql<{ id: string }[]>`
       update fuelradar.import_runs
       set status = 'failed',
           finished_at = ${finishedAt},
           duration_ms = ${Math.max(0, finishedAt.getTime() - startedAt.getTime())},
           error_message = ${safeErrorMessage(error)}
-      where id = ${run.id}::bigint
+      where id = ${run.id}::bigint and status = 'running'
+      returning id
     `;
+    if (!failed && !(error instanceof MimitImportClaimLostError)) {
+      throw new MimitImportClaimLostError();
+    }
     throw error;
   }
 }
