@@ -147,6 +147,11 @@ try {
     concurrent.filter(({ status }) => status === "skipped").length === 1,
     "Concurrent imports did not skip the duplicate content.",
   );
+  const concurrentSkip = concurrent.find(({ status }) => status === "skipped");
+  assert(
+    concurrentSkip?.reason === "already-running",
+    "The conflicting concurrent import was not recorded as already running.",
+  );
 
   const [summary] = await sql<
     {

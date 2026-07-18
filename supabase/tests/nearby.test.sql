@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 
-SELECT extensions.plan(8);
+SELECT extensions.plan(11);
 
 SELECT extensions.is(
 	(
@@ -116,6 +116,48 @@ SELECT extensions.ok(
 		'EXECUTE'
 	),
 	'only the server role can execute the nearby RPC'
+);
+
+DELETE FROM fuelradar.import_runs;
+
+INSERT INTO fuelradar.import_runs (status)
+VALUES ('running');
+
+SELECT extensions.is(
+	(
+		SELECT count(*)::integer
+		FROM fuelradar.import_runs
+		WHERE status = 'running'
+	),
+	1,
+	'the first running import can be recorded'
+);
+
+INSERT INTO fuelradar.import_runs (status)
+VALUES ('running')
+ON CONFLICT DO NOTHING;
+
+SELECT extensions.is(
+	(
+		SELECT count(*)::integer
+		FROM fuelradar.import_runs
+		WHERE status = 'running'
+	),
+	1,
+	'the partial unique index rejects a duplicate running import'
+);
+
+INSERT INTO fuelradar.import_runs (status)
+VALUES ('failed'), ('failed');
+
+SELECT extensions.is(
+	(
+		SELECT count(*)::integer
+		FROM fuelradar.import_runs
+		WHERE status = 'failed'
+	),
+	2,
+	'the running-only invariant allows multiple terminal imports'
 );
 
 SELECT * FROM extensions.finish();

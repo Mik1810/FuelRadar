@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "import_runs_single_running_idx" ON "fuelradar"."import_runs" USING btree ("status") WHERE "fuelradar"."import_runs"."status" = 'running';

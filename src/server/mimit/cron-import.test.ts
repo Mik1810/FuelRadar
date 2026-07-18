@@ -5,6 +5,7 @@ import type { MimitDatasetMetadata } from "@/domain/mimit/source";
 import {
   getMimitCircuitFingerprint,
   getMimitMetadataFingerprint,
+  IMPORT_LOCK_KEY,
   MimitImportClaimLostError,
   runMimitImport,
 } from "@/server/mimit/importer";
@@ -22,6 +23,7 @@ type QueryEvent = {
 type FakeSqlOptions = {
   lockAcquired?: boolean;
   activeRunId?: string;
+  activeRunStartedAt?: Date;
   failureCount?: (fingerprint: string) => number;
   unchangedDatasetId?: string;
   loseClaimOnMetadataUpdate?: boolean;
@@ -34,8 +36,11 @@ function normalizeSql(strings: TemplateStringsArray): string {
 
 function createFakeSql(options: FakeSqlOptions = {}) {
   const events: QueryEvent[] = [];
+  const expiredRunIds: string[] = [];
+  let beginCalls = 0;
   let nextRunId = 1;
   let activeRunId = options.activeRunId;
+  let activeRunStartedAt = options.activeRunStartedAt;
 
   const query = async <T extends unknown[]>(
     strings: TemplateStringsArray,
@@ -44,6 +49,43 @@ function createFakeSql(options: FakeSqlOptions = {}) {
     const text = normalizeSql(strings);
     events.push({ text, values });
 
+    if (
+      text.includes("pg_try_advisory_xact_lock") &&
+      text.includes("update fuelradar.import_runs") &&
+      text.includes("insert into fuelradar.import_runs")
+    ) {
+      if (!(options.lockAcquired ?? true)) return [] as unknown as T;
+
+      const dates = values.filter((value): value is Date => value instanceof Date);
+      const staleBefore = dates.reduce<Date | undefined>(
+        (earliest, value) =>
+          !earliest || value.getTime() < earliest.getTime() ? value : earliest,
+        undefined,
+      );
+      const claimedAt = dates.reduce<Date | undefined>(
+        (latest, value) =>
+          !latest || value.getTime() > latest.getTime() ? value : latest,
+        undefined,
+      );
+      if (!staleBefore || !claimedAt) {
+        throw new Error("Single-statement claim must bind its lease timestamps.");
+      }
+
+      if (
+        activeRunId &&
+        activeRunStartedAt &&
+        activeRunStartedAt.getTime() < staleBefore.getTime()
+      ) {
+        expiredRunIds.push(activeRunId);
+        activeRunId = undefined;
+        activeRunStartedAt = undefined;
+      }
+      if (activeRunId) return [] as unknown as T;
+
+      activeRunId = `run-${nextRunId++}`;
+      activeRunStartedAt = claimedAt;
+      return [{ id: activeRunId }] as T;
+    }
     if (text.includes("pg_try_advisory_xact_lock")) {
       return [{ acquired: options.lockAcquired ?? true }] as T;
     }
@@ -72,8 +114,22 @@ function createFakeSql(options: FakeSqlOptions = {}) {
       text.includes("insert into fuelradar.import_runs") &&
       text.includes("values ('running'")
     ) {
+      if (
+        activeRunId &&
+        text.includes(
+          "on conflict (status) where status = 'running' do nothing",
+        )
+      ) {
+        return [] as unknown as T;
+      }
       activeRunId = `run-${nextRunId++}`;
       return [{ id: activeRunId }] as T;
+    }
+    if (
+      text.includes("insert into fuelradar.import_runs") &&
+      text.includes("'skipped'")
+    ) {
+      return [{ id: `run-${nextRunId++}` }] as T;
     }
     if (text.includes("select count(*)::integer as failure_count")) {
       const fingerprint = values.find(
@@ -124,10 +180,20 @@ function createFakeSql(options: FakeSqlOptions = {}) {
   };
   sql.begin = async <T>(
     callback: (transaction: postgres.TransactionSql) => Promise<T>,
-  ) => callback(sql as unknown as postgres.TransactionSql);
+  ) => {
+    beginCalls += 1;
+    return callback(sql as unknown as postgres.TransactionSql);
+  };
   sql.json = (value: unknown) => value;
 
-  return { sql: sql as unknown as postgres.Sql, events };
+  return {
+    sql: sql as unknown as postgres.Sql,
+    events,
+    expiredRunIds,
+    get beginCalls() {
+      return beginCalls;
+    },
+  };
 }
 
 function metadata(version: string | null): MimitDatasetMetadata {
@@ -161,15 +227,19 @@ describe("MIMIT cron import", () => {
   test("wraps a database failure before the claim is created", async () => {
     const databaseCause = new Error("database connection failed");
     let metadataCalls = 0;
-    const sql = {
-      begin: async () => {
-        throw databaseCause;
-      },
-    } as unknown as postgres.Sql;
+    let beginCalls = 0;
+    const query = async () => {
+      throw databaseCause;
+    };
+    const sql = query as typeof query & { begin: () => Promise<never> };
+    sql.begin = async () => {
+      beginCalls += 1;
+      throw new Error("claimRun must not open an explicit transaction");
+    };
 
     try {
       await runMimitCronImport({
-        sql,
+        sql: sql as unknown as postgres.Sql,
         fetchMetadata: async () => {
           metadataCalls += 1;
           return metadata("unused");
@@ -183,6 +253,93 @@ describe("MIMIT cron import", () => {
       expect((error as Error & { cause?: unknown }).cause).toBe(databaseCause);
     }
     expect(metadataCalls).toBe(0);
+    expect(beginCalls).toBe(0);
+  });
+
+  test("claims with one atomic tagged query and no explicit transaction", async () => {
+    const claimedAt = new Date("2026-07-18T12:00:00.000Z");
+    const staleBefore = new Date(claimedAt.getTime() - 15 * 60 * 1_000);
+
+    for (const options of [
+      {
+        lockAcquired: false,
+        activeRunId: "stale-run-without-lock",
+        activeRunStartedAt: new Date(staleBefore.getTime() - 1),
+      },
+      {
+        lockAcquired: true,
+        activeRunId: "active-run",
+        activeRunStartedAt: new Date(claimedAt.getTime() - 60_000),
+      },
+    ]) {
+      const fake = createFakeSql(options);
+      let metadataCalls = 0;
+      const result = await runMimitCronImport({
+        sql: fake.sql,
+        now: () => claimedAt,
+        fetchMetadata: async () => {
+          metadataCalls += 1;
+          return metadata("blocked");
+        },
+        downloadDataset: neverDownload(),
+        isTransientFetchError: () => false,
+      });
+
+      expect(result).toMatchObject({ reason: "already-running", runId: null });
+      expect(metadataCalls).toBe(0);
+      expect(fake.beginCalls).toBe(0);
+      expect(fake.expiredRunIds).toEqual([]);
+      expect(fake.events).toHaveLength(1);
+      expect(fake.events[0]?.text).toContain("pg_try_advisory_xact_lock");
+      expect(fake.events[0]?.text).toContain("update fuelradar.import_runs");
+      expect(fake.events[0]?.text).toContain("insert into fuelradar.import_runs");
+      expect(fake.events[0]?.text).toContain(
+        "on conflict (status) where status = 'running' do nothing",
+      );
+      expect(fake.events[0]?.text).toContain("returning id");
+      expect(fake.events[0]?.values).toContain(IMPORT_LOCK_KEY);
+      expect(
+        fake.events[0]?.values.some(
+          (value) =>
+            value instanceof Date && value.getTime() === staleBefore.getTime(),
+        ),
+      ).toBeTrue();
+    }
+
+    const stale = createFakeSql({
+      activeRunId: "stale-run",
+      activeRunStartedAt: new Date(
+        claimedAt.getTime() - 30 * 24 * 60 * 60 * 1_000,
+      ),
+      failureCount: () => 3,
+    });
+    const result = await runMimitCronImport({
+      sql: stale.sql,
+      now: () => claimedAt,
+      fetchMetadata: async () => metadata("stale-reclaimed"),
+      downloadDataset: neverDownload(),
+      isTransientFetchError: () => false,
+    });
+
+    expect(result).toMatchObject({ reason: "circuit-open", runId: "run-1" });
+    expect(stale.beginCalls).toBe(0);
+    expect(stale.expiredRunIds).toEqual(["stale-run"]);
+    const claimEvents = stale.events.filter(({ text }) =>
+      text.includes("pg_try_advisory_xact_lock"),
+    );
+    expect(claimEvents).toHaveLength(1);
+    expect(claimEvents[0]?.text).toContain("started_at <");
+    expect(claimEvents[0]?.text).toContain("least( 2147483647");
+    expect(claimEvents[0]?.text).toContain(
+      "on conflict (status) where status = 'running' do nothing",
+    );
+    expect(claimEvents[0]?.values).toContain(IMPORT_LOCK_KEY);
+    expect(
+      claimEvents[0]?.values.some(
+        (value) =>
+          value instanceof Date && value.getTime() === claimedAt.getTime(),
+      ),
+    ).toBeTrue();
   });
 
   test("returns already-running for an overlapping claimed run and cleans up its lease", async () => {
@@ -210,6 +367,7 @@ describe("MIMIT cron import", () => {
     expect(
       fake.events.filter(({ text }) => text.includes("pg_try_advisory")),
     ).toHaveLength(2);
+    expect(fake.beginCalls).toBe(0);
 
     metadataResult.resolve(metadata("first"));
     expect((await first).reason).toBe("circuit-open");
@@ -243,10 +401,11 @@ describe("MIMIT cron import", () => {
       expect(result.reason).toBe("already-running");
       expect(metadataCalls).toBe(0);
       expect(
-        fake.events.some(({ text }) =>
-          text.includes("insert into fuelradar.import_runs"),
+        fake.events.filter(({ text }) =>
+          text.includes("pg_try_advisory_xact_lock"),
         ),
-      ).toBeFalse();
+      ).toHaveLength(1);
+      expect(fake.beginCalls).toBe(0);
     }
   });
 
@@ -810,6 +969,46 @@ describe("MIMIT metadata fingerprints", () => {
 });
 
 describe("MIMIT import claim fencing", () => {
+  test("a direct importer records a bounded already-running skip", async () => {
+    const fake = createFakeSql({ activeRunId: "active-run" });
+    const startedAt = new Date("2026-06-01T12:00:00.000Z");
+    const finishedAt = new Date("2026-07-18T12:00:00.000Z");
+    const timestamps = [startedAt, finishedAt];
+    let metadataCalls = 0;
+    let downloadCalls = 0;
+
+    const result = await runMimitImport({
+      sql: fake.sql,
+      now: () => timestamps.shift() ?? finishedAt,
+      fetchMetadata: async () => {
+        metadataCalls += 1;
+        return metadata("blocked");
+      },
+      downloadDataset: async () => {
+        downloadCalls += 1;
+        throw new Error("download should not be called");
+      },
+    });
+
+    expect(result).toEqual({
+      runId: "run-1",
+      datasetId: null,
+      status: "skipped",
+      stationCount: 0,
+      priceCount: 0,
+      durationMs: 2_147_483_647,
+      reason: "already-running",
+    });
+    expect(metadataCalls).toBe(0);
+    expect(downloadCalls).toBe(0);
+    expect(fake.events).toHaveLength(2);
+    expect(fake.events[0]?.text).toContain(
+      "on conflict (status) where status = 'running' do nothing",
+    );
+    expect(fake.events[1]?.text).toContain("'skipped'");
+    expect(fake.events[1]?.values).toContain(2_147_483_647);
+  });
+
   test("a reclaimed worker cannot update a terminal state", async () => {
     const fake = createFakeSql({
       activeRunId: "run-a",
