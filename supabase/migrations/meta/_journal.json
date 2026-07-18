@@ -8,6 +8,13 @@
       "when": 1784383515232,
       "tag": "20260718140515_fuelradar_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784384985923,
+      "tag": "20260718142945_postgis_schema_nearby",
+      "breakpoints": true
     }
   ]
 }
