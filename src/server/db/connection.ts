@@ -4,7 +4,12 @@ import postgres from "postgres";
 import * as schema from "@/server/db/schema";
 
 function toSqlValue(value: unknown): unknown {
+  if (value === null || value === undefined) return value;
   if (value instanceof Date) return value.toISOString();
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return value;
+  if (Buffer.isBuffer(value)) return value;
+  if (value instanceof ArrayBuffer) return value;
+  if (typeof value === "object") return JSON.stringify(value);
   return value;
 }
 
