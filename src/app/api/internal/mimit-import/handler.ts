@@ -148,6 +148,7 @@ export function createMimitImportHandler(
       let errorName: string;
       let causeCode: string | undefined;
       let errorHash: string | undefined;
+      let causeHash: string | undefined;
       try {
         errorName = error instanceof Error ? error.constructor.name : typeof error;
         const rec = error as unknown as Record<string, unknown>;
@@ -159,6 +160,12 @@ export function createMimitImportHandler(
           causeCode = (rec.cause as Record<string, unknown>)?.code as
             | string
             | undefined;
+          if ((rec.cause as Record<string, unknown>)?.message) {
+            causeHash = createHash("sha256")
+              .update(String((rec.cause as Record<string, unknown>).message))
+              .digest("hex")
+              .slice(0, 16);
+          }
         }
         if (error instanceof Error && error.message) {
           errorHash = createHash("sha256")
@@ -176,6 +183,7 @@ export function createMimitImportHandler(
           errorName,
           causeCode: causeCode ?? undefined,
           errorHash: errorHash ?? undefined,
+          causeHash: causeHash ?? undefined,
         }),
       );
       return NextResponse.json(
