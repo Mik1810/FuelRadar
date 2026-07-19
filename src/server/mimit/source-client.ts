@@ -78,9 +78,10 @@ export async function fetchMimitResourceMetadata(
   } catch (error) {
     if (error instanceof MimitSourceFetchError) throw error;
     const msg = error instanceof Error ? error.message.slice(0, 120) : String(error).slice(0, 120);
-    const code = (error as Record<string, unknown>)?.code;
-    const causeCode = error instanceof Error && (error as Record<string, unknown>)?.cause
-      ? ((error as Record<string, unknown>).cause as Record<string, unknown>)?.code
+    const rec = error as unknown as Record<string, unknown>;
+    const code = rec?.code;
+    const causeCode = error instanceof Error && rec?.cause
+      ? (rec.cause as Record<string, unknown>)?.code
       : undefined;
     console.error(
       "MIMIT_FETCH_ERROR " +
@@ -110,9 +111,10 @@ export async function downloadMimitResource(
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message.slice(0, 120) : String(error).slice(0, 120);
-    const code = (error as Record<string, unknown>)?.code;
-    const causeCode = error instanceof Error && (error as Record<string, unknown>)?.cause
-      ? ((error as Record<string, unknown>).cause as Record<string, unknown>)?.code
+    const rec = error as unknown as Record<string, unknown>;
+    const code = rec?.code;
+    const causeCode = error instanceof Error && rec?.cause
+      ? (rec.cause as Record<string, unknown>)?.code
       : undefined;
     console.error(
       "MIMIT_DOWNLOAD_ERROR " +
