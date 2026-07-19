@@ -143,12 +143,17 @@ export function createMimitImportHandler(
         );
       }
 
+      let errorName: string;
+      try {
+        errorName = error instanceof Error ? error.constructor.name : typeof error;
+      } catch {
+        errorName = "unreadable";
+      }
       dependencies.logger.error(
         JSON.stringify({
           event: "mimit_import_failed",
           durationMs: now() - requestStartedAt,
-          errorName:
-            error instanceof Error ? error.constructor.name : typeof error,
+          errorName,
         }),
       );
       return NextResponse.json(

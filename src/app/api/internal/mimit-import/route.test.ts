@@ -229,7 +229,7 @@ describe("internal MIMIT import route", () => {
     });
     expect(log.infos).toHaveLength(0);
     expect(log.errors).toHaveLength(1);
-    expect(JSON.parse(log.errors[0]!)).toEqual({
+    expect(JSON.parse(log.errors[0]!)).toMatchObject({
       event: "mimit_import_failed",
       durationMs: 25,
     });

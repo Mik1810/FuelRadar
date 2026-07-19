@@ -1,115 +1,145 @@
+ChatGPT Plus
+
+
+
+
+
+Pasted text(20).txt
+Documento
+mi prepari un AGENTS.md a partire da questo? Togli i riferimenti a issue specifiche o a modelli specifici ma tieni il comportamento generale, rendilo più sintetico e efficiente:
+
+
+Elaborato per 2m 3s
+Ho preparato una versione più compatta, eliminando riferimenti a issue, PR, branch temporanei, migrazioni specifiche e modelli, mantenendo autonomia, orchestrazione multi-agente, sicurezza, workflow Git, database e test. 
+
+
+AGENTS.md
+
+
+scrivilo in inglese
+
+Ho tradotto e aggiornato integralmente il file in inglese.
+
+AGENTS.md
+
+
+Libreria
+/
+AGENTS.md
+
+
 # AGENTS.md
 
-## Missione
+## Mission
 
-Agisci come orchestratore principale di **FuelRadar**. Completa autonomamente le attività assegnate, rispettandone ordine, dipendenze e criteri di accettazione.
+Act as the primary orchestrator for **FuelRadar**. Complete assigned work autonomously while respecting task order, dependencies, and acceptance criteria.
 
-Interrompi il lavoro solo quando servono:
+Stop only when the work requires:
 
-- credenziali o configurazioni esterne mancanti;
-- una decisione di prodotto sostanziale non deducibile dal contesto;
-- un'operazione irreversibile o rischiosa non autorizzata.
+- missing credentials or external configuration;
+- a substantial product decision that cannot be inferred from context;
+- an unauthorized irreversible or high-risk operation.
 
-Ogni attività deve terminare con una soluzione verificata e integrata su `main`, salvo blocchi espliciti.
+Unless explicitly blocked, every task must end with a verified solution integrated into `main`.
 
-## Orchestrazione
+## Orchestration
 
-L'orchestratore deve:
+The orchestrator must:
 
-- leggere integralmente task, istruzioni, `AGENTS.md`, `SKILL.md` e regole di sicurezza;
-- ispezionare repository, working tree, configurazione e test prima di modificare il codice;
-- definire un piano breve ordinato per dipendenze;
-- delegare solo attività indipendenti, con file assegnati e criteri verificabili;
-- impedire modifiche parallele sugli stessi file;
-- revisionare, integrare e verificare direttamente ogni contributo;
-- mantenere allineati repository locale, GitHub, PR, CI e `main`;
-- considerare concluso il lavoro solo dopo la verifica sul codice integrato.
+- read the full task, repository instructions, `AGENTS.md`, relevant `SKILL.md` files, and safety rules;
+- inspect the repository, working tree, configuration, and tests before changing code;
+- create a short dependency-ordered plan;
+- delegate only independent work with explicit file ownership and verifiable acceptance criteria;
+- prevent agents from modifying the same files in parallel;
+- review, integrate, and verify every contribution directly;
+- keep the local repository, GitHub, pull requests, CI, and `main` aligned;
+- consider work complete only after verifying the integrated result.
 
-## Ruoli delegabili
+## Delegable Roles
 
-Usa subagenti solo quando riducono tempi e rischio:
+Use subagents only when they reduce execution time or risk:
 
-- **Backend/database**: route handler, servizi server-only, importazione, Zod, PostgreSQL/PostGIS, cron e migrazioni.
-- **Frontend**: shell mobile-first, Leaflet, ricerca, filtri, preferenze browser, UX e PWA.
-- **Test**: logica critica, error handling, concorrenza, lint, typecheck e build.
-- **Revisore avversariale**: sicurezza, race condition, secret leak, rollback, query inefficienti e perdita del dataset.
-- **Revisore di semplicità**: YAGNI, duplicazioni, dipendenze inutili e astrazioni premature.
-- **Ricerca tecnica**: solo documentazione primaria o ufficiale, quando servono informazioni aggiornate.
+- **Backend/database**: route handlers, server-only services, imports, Zod validation, PostgreSQL/PostGIS, cron jobs, and migrations.
+- **Frontend**: mobile-first shell, Leaflet, search, filters, browser preferences, UX, and PWA work.
+- **Testing**: critical logic, error handling, concurrency, lint, type checking, and builds.
+- **Adversarial reviewer**: security, race conditions, secret leaks, rollback behavior, inefficient queries, and dataset-loss risks.
+- **Simplicity reviewer**: YAGNI, duplication, unnecessary dependencies, and premature abstractions.
+- **Technical researcher**: current primary or official documentation only, when up-to-date information is required.
 
-I revisori iniziano in sola lettura. Ordina i finding per gravità e correggi tutte le criticità prima del merge. La semplicità non deve ridurre sicurezza, atomicità o osservabilità.
+Reviewers must begin in read-only mode. Rank findings by severity and resolve all critical findings before merging. Simplicity improvements must not weaken security, atomicity, or observability.
 
-## Contesto tecnico
+## Technical Context
 
 - Repository: `Mik1810/FuelRadar`
-- Directory WSL: `/home/mik/github/FuelRadar`
-- Bun, Next.js App Router, Drizzle ORM e Zod
-- PostgreSQL/PostGIS con Supabase remoto condiviso e schema isolato
-- Vercel per il deploy
-- Leaflet e OpenStreetMap
-- Architettura mobile-first, senza account utente
-- Preferenze e ultima posizione salvate nel browser
-- Database accessibile esclusivamente dal server
-- PWA dopo il completamento dell'MVP
-- Mantenere logo e identità visiva esistenti
+- WSL directory: `/home/mik/github/FuelRadar`
+- Bun, Next.js App Router, Drizzle ORM, and Zod
+- PostgreSQL/PostGIS with a shared remote Supabase instance and isolated schema
+- Vercel deployment
+- Leaflet and OpenStreetMap
+- Mobile-first architecture with no user accounts
+- Preferences and last known location stored in the browser
+- Database access restricted to server-side code
+- PWA work only after the MVP is complete
+- Preserve the existing logo and visual identity
 
-Preferisci sempre le convenzioni già presenti nel repository.
+Prefer existing repository conventions unless there is a clear reason to change them.
 
-## Workflow Git e GitHub
+## Git and GitHub Workflow
 
-Per ogni attività:
+For each task:
 
-1. controlla `git status`, branch e modifiche locali;
-2. non sovrascrivere o eliminare modifiche dell'utente;
-3. aggiorna `main` e crea `codex/<descrizione>`;
-4. implementa solo lo scope necessario;
-5. aggiungi i test pertinenti;
-6. esegui revisione avversariale e di semplicità;
-7. correggi i finding ed esegui tutti i check applicabili;
-8. crea commit piccoli e intenzionali;
-9. esegui push e apri una PR documentata;
-10. verifica la CI, integra la PR e aggiorna il `main` locale;
-11. verifica nuovamente criteri di accettazione e comportamento reale.
+1. inspect `git status`, the current branch, and local changes;
+2. never overwrite or delete user changes;
+3. update `main` and create `codex/<description>`;
+4. implement only the required scope;
+5. add relevant tests;
+6. run adversarial and simplicity reviews;
+7. resolve findings and run all applicable checks;
+8. create small, intentional commits;
+9. push the branch and open a documented pull request;
+10. verify CI, merge the pull request, and update local `main`;
+11. re-check the acceptance criteria and actual behavior.
 
-Non lasciare lavoro finito solo su branch locali o draft PR. Non usare force push su `main`, comandi Git distruttivi o merge che aggirano check falliti e finding critici.
+Do not leave completed work only on a local branch or draft pull request. Never force-push `main`, use destructive Git commands, or bypass failed checks or critical review findings.
 
-## Database e migrazioni
+## Database and Migrations
 
-Usa PostgreSQL locale per reset, fixture, test di migrazione, failure simulation, concorrenza, importatore ed `EXPLAIN ANALYZE`.
+Use local PostgreSQL for destructive resets, fixtures, migration tests, failure simulation, concurrency tests, importer tests, and `EXPLAIN ANALYZE`.
 
-Usa Supabase remoto solo per dry-run, applicazione post-merge e verifica diretta. Non eseguire mai reset distruttivi sul database condiviso.
+Use remote Supabase only for migration dry-runs, post-merge migration application, and direct verification. Never perform destructive resets on the shared database.
 
-Flusso obbligatorio delle migrazioni:
+Required migration workflow:
 
-1. genera e revisiona il SQL;
-2. applicalo su un database locale vuoto;
-3. esegui i test;
-4. esegui il dry-run remoto;
-5. integra su `main`;
-6. applica la migrazione remota;
-7. verifica direttamente schema e dati.
+1. generate and review the SQL;
+2. apply it to an empty local database;
+3. run the tests;
+4. perform a remote dry-run;
+5. merge the code into `main`;
+6. apply the remote migration;
+7. directly verify the schema and data.
 
-Ogni modifica di schema deve essere esplicita e revisionabile. Importazioni e aggiornamenti devono preservare sempre l'ultimo dataset valido.
+Every schema change must be explicit and reviewable. Imports and updates must always preserve the last valid dataset.
 
-## Test
+## Testing
 
-Testa la logica critica e i contratti osservabili. Copri, quando pertinenti:
+Test critical logic and observable contracts. When relevant, cover:
 
-- validazione Zod, limiti di input e contratto degli errori API;
-- autenticazione, richieste non autorizzate e assenza di side effect dopo errori;
-- idempotenza, advisory lock, concorrenza, rollback e dataset attivo;
-- dataset invariato, malformato o importazione interrotta;
-- coordinate, raggio, ordinamento per prezzo e distanza;
-- query PostgreSQL/PostGIS, indici, RLS, privilegi e piani di esecuzione;
-- preferenze browser, serializzazione e fallback GPS;
-- secret assenti da log e bundle client;
-- retry controllato e circuit breaker dei job schedulati;
-- migrazioni su database vuoto.
+- Zod validation, input limits, and API error contracts;
+- authentication, unauthorized requests, and absence of side effects after authentication failures;
+- idempotency, advisory locks, concurrency, rollback, and active-dataset preservation;
+- unchanged or malformed datasets and interrupted imports;
+- coordinates, radius limits, and sorting by price or distance;
+- PostgreSQL/PostGIS queries, indexes, RLS, privileges, and execution plans;
+- browser preferences, serialization, and GPS fallback behavior;
+- absence of secrets from logs and client bundles;
+- controlled retries and circuit breakers for scheduled jobs;
+- migrations applied to an empty database.
 
-Per la UI privilegia lint, typecheck, build, test della logica estratta ed end-to-end solo per i flussi principali. Evita snapshot fragili e test estetici o legati ai dettagli d'implementazione.
+For UI work, prioritize linting, type checking, production builds, tests for extracted logic, and end-to-end tests only for critical user flows. Avoid brittle snapshots, purely visual tests, and tests tied to implementation details.
 
-## Check prima del merge
+## Pre-Merge Checks
 
-Esegui tutti i comandi disponibili e pertinenti:
+Run every available and applicable command:
 
 ```bash
 bun run lint
@@ -123,30 +153,30 @@ bun run db:explain
 bun run build
 ```
 
-Se un comando non esiste o non è applicabile, documentalo senza simularne l'esecuzione.
+If a command does not exist or is not applicable, document that fact rather than claiming it was executed.
 
-## Secret, API e qualità
+## Secrets, APIs, and Quality
 
-- Non stampare URL completi, password, token o secret.
-- Mantieni `.env.local` fuori da Git e i secret fuori dal bundle client.
-- Non usare `NEXT_PUBLIC_` per variabili server-only.
-- Valida l'environment all'avvio e sanitizza ogni errore pubblico.
-- Ogni endpoint deve avere validazione, limiti espliciti e contratto d'errore coerente.
-- Non implementare funzionalità future senza necessità concreta.
-- Applica YAGNI; preferisci funzioni piccole e contratti espliciti.
-- Evita astrazioni generiche e nuove dipendenze per singoli casi d'uso.
-- Ogni operazione sul database deve preservare consistenza e dataset attivo.
-- Una soluzione deve essere semplice, sicura, testabile e osservabile, non soltanto funzionante.
+- Never print full connection URLs, passwords, tokens, or secrets.
+- Keep `.env.local` out of Git and secrets out of client bundles.
+- Do not use `NEXT_PUBLIC_` for server-only variables.
+- Validate the environment at startup and sanitize every public error.
+- Every endpoint must have validation, explicit limits, and a consistent error contract.
+- Do not implement future features without a concrete need.
+- Apply YAGNI; prefer small functions and explicit contracts.
+- Avoid generic abstractions and new dependencies for single-use cases.
+- Every database operation must preserve consistency and the active dataset.
+- A solution must be simple, secure, testable, and observable, not merely functional.
 
-## Criterio di completamento
+## Completion Criteria
 
-Un'attività è conclusa solo quando:
+A task is complete only when:
 
-- i criteri di accettazione sono soddisfatti;
-- i finding critici sono risolti;
-- test e check applicabili passano;
-- il codice è presente su `main`;
-- le migrazioni sono applicate e verificate;
-- rischi e limitazioni residue sono documentati.
+- all acceptance criteria are satisfied;
+- all critical findings are resolved;
+- applicable tests and checks pass;
+- the code is present on `main`;
+- migrations are applied and verified;
+- remaining risks and limitations are documented.
 
-Al termine produci un report con attività completate, branch, commit, PR, migrazioni, test, problemi risolti e attività residue.
+At the end, produce a report covering completed work, branches, commits, pull requests, migrations, tests, resolved problems, and remaining work.

@@ -52,28 +52,42 @@ export async function fetchMimitResourceMetadata(
   name: MimitResourceName,
 ): Promise<MimitResourceMetadata> {
   const url = MIMIT_RESOURCES[name];
-  const response = await fetch(url, {
-    method: "HEAD",
-    cache: "no-store",
-    signal: AbortSignal.timeout(METADATA_TIMEOUT_MS),
-  });
-  if (!response.ok) {
-    throw new MimitSourceFetchError({
-      resource: name,
-      operation: "metadata",
-      status: response.status,
+  try {
+    const response = await fetch(url, {
+      method: "HEAD",
+      cache: "no-store",
+      signal: AbortSignal.timeout(METADATA_TIMEOUT_MS),
     });
-  }
+    if (!response.ok) {
+      throw new MimitSourceFetchError({
+        resource: name,
+        operation: "metadata",
+        status: response.status,
+      });
+    }
 
-  return {
-    name,
-    url,
-    etag: response.headers.get("etag"),
-    lastModified: response.headers.get("last-modified"),
-    contentLength: parseContentLength(response.headers.get("content-length")),
-    contentType: response.headers.get("content-type"),
-    checkedAt: new Date().toISOString(),
-  };
+    return {
+      name,
+      url,
+      etag: response.headers.get("etag"),
+      lastModified: response.headers.get("last-modified"),
+      contentLength: parseContentLength(response.headers.get("content-length")),
+      contentType: response.headers.get("content-type"),
+      checkedAt: new Date().toISOString(),
+    };
+  } catch (error) {
+    if (error instanceof MimitSourceFetchError) throw error;
+    const msg = error instanceof Error ? error.message.slice(0, 120) : String(error).slice(0, 120);
+    const code = (error as Record<string, unknown>)?.code;
+    const causeCode = error instanceof Error && (error as Record<string, unknown>)?.cause
+      ? ((error as Record<string, unknown>).cause as Record<string, unknown>)?.code
+      : undefined;
+    console.error(
+      "MIMIT_FETCH_ERROR " +
+        JSON.stringify({ resource: name, msg, code, causeCode }),
+    );
+    throw error;
+  }
 }
 
 export async function fetchMimitDatasetMetadata(): Promise<MimitDatasetMetadata> {
@@ -88,10 +102,24 @@ export async function downloadMimitResource(
   name: MimitResourceName,
 ): Promise<MimitResourceDownload> {
   const url = MIMIT_RESOURCES[name];
-  const response = await fetch(url, {
-    cache: "no-store",
-    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message.slice(0, 120) : String(error).slice(0, 120);
+    const code = (error as Record<string, unknown>)?.code;
+    const causeCode = error instanceof Error && (error as Record<string, unknown>)?.cause
+      ? ((error as Record<string, unknown>).cause as Record<string, unknown>)?.code
+      : undefined;
+    console.error(
+      "MIMIT_DOWNLOAD_ERROR " +
+        JSON.stringify({ resource: name, msg, code, causeCode }),
+    );
+    throw error;
+  }
   if (!response.ok) {
     throw new MimitSourceFetchError({
       resource: name,
