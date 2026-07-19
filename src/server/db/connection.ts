@@ -26,13 +26,19 @@ function wrapWithDateSerializer<T extends object>(raw: T): T {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, target);
       if (prop === "begin" && typeof value === "function") {
-        return new Proxy(value, {
-          apply(beginTarget, beginThisArg, beginArgs) {
-            return Reflect.apply(beginTarget, beginThisArg, beginArgs).then(
-              (tx: object) => wrapWithDateSerializer(tx),
-            );
-          },
-        });
+        const rawBegin = value.bind(target);
+        return (...args: unknown[]) => {
+          if (typeof args[0] === "function") {
+            const callback = args[0] as (tx: object) => unknown;
+            return rawBegin(async (tx: object) => {
+              const wrappedTx = wrapWithDateSerializer(tx);
+              return callback(wrappedTx);
+            });
+          }
+          return rawBegin(...args).then((tx: object) =>
+            wrapWithDateSerializer(tx),
+          );
+        };
       }
       if (prop === "json" && typeof value === "function") {
         return (obj: unknown) => {
