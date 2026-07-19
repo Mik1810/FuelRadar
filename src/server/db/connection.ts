@@ -4,27 +4,36 @@ import postgres from "postgres";
 import * as schema from "@/server/db/schema";
 
 function toSqlValue(value: unknown): unknown {
-  return value instanceof Date ? value.toISOString() : value;
+  if (value instanceof Date) return value.toISOString();
+  return value;
 }
 
 function wrapWithDateSerializer<T extends object>(raw: T): T {
   return new Proxy(raw, {
     apply(target, thisArg, argumentsList) {
       const [template, ...params] = argumentsList;
-      return Reflect.apply(target as (strings: TemplateStringsArray, ...values: unknown[]) => unknown, thisArg, [
-        template,
-        ...params.map(toSqlValue),
-      ]);
+      return Reflect.apply(
+        target as (strings: TemplateStringsArray, ...values: unknown[]) => unknown,
+        thisArg,
+        [template, ...params.map(toSqlValue)],
+      );
     },
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, target);
       if (prop === "begin" && typeof value === "function") {
         return new Proxy(value, {
           apply(beginTarget, beginThisArg, beginArgs) {
-            return Reflect.apply(beginTarget, beginThisArg, beginArgs)
-              .then((tx: object) => wrapWithDateSerializer(tx));
+            return Reflect.apply(beginTarget, beginThisArg, beginArgs).then(
+              (tx: object) => wrapWithDateSerializer(tx),
+            );
           },
         });
+      }
+      if (prop === "json" && typeof value === "function") {
+        return (obj: unknown) => {
+          if (obj === null || obj === undefined) return "null";
+          return typeof obj === "string" ? obj : JSON.stringify(obj);
+        };
       }
       return value;
     },
