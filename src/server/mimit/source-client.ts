@@ -52,11 +52,13 @@ export async function fetchMimitResourceMetadata(
   name: MimitResourceName,
 ): Promise<MimitResourceMetadata> {
   const url = MIMIT_RESOURCES[name];
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), METADATA_TIMEOUT_MS);
   try {
     const response = await fetch(url, {
       method: "HEAD",
       cache: "no-store",
-      signal: AbortSignal.timeout(METADATA_TIMEOUT_MS),
+      signal: controller.signal,
     });
     if (!response.ok) {
       throw new MimitSourceFetchError({
@@ -88,6 +90,8 @@ export async function fetchMimitResourceMetadata(
         JSON.stringify({ resource: name, msg, code, causeCode }),
     );
     throw error;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -103,11 +107,13 @@ export async function downloadMimitResource(
   name: MimitResourceName,
 ): Promise<MimitResourceDownload> {
   const url = MIMIT_RESOURCES[name];
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
   let response: Response;
   try {
     response = await fetch(url, {
       cache: "no-store",
-      signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+      signal: controller.signal,
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message.slice(0, 120) : String(error).slice(0, 120);
@@ -121,6 +127,8 @@ export async function downloadMimitResource(
         JSON.stringify({ resource: name, msg, code, causeCode }),
     );
     throw error;
+  } finally {
+    clearTimeout(timeout);
   }
   if (!response.ok) {
     throw new MimitSourceFetchError({

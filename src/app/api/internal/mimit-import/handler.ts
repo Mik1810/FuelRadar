@@ -144,8 +144,19 @@ export function createMimitImportHandler(
       }
 
       let errorName: string;
+      let causeCode: string | undefined;
       try {
         errorName = error instanceof Error ? error.constructor.name : typeof error;
+        const rec = error as unknown as Record<string, unknown>;
+        if (
+          error instanceof Error &&
+          rec?.cause &&
+          typeof rec.cause === "object"
+        ) {
+          causeCode = (rec.cause as Record<string, unknown>)?.code as
+            | string
+            | undefined;
+        }
       } catch {
         errorName = "unreadable";
       }
@@ -154,6 +165,7 @@ export function createMimitImportHandler(
           event: "mimit_import_failed",
           durationMs: now() - requestStartedAt,
           errorName,
+          causeCode: causeCode ?? undefined,
         }),
       );
       return NextResponse.json(
