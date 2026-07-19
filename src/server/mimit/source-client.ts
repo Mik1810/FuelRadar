@@ -77,19 +77,6 @@ export async function fetchMimitResourceMetadata(
       contentType: response.headers.get("content-type"),
       checkedAt: new Date().toISOString(),
     };
-  } catch (error) {
-    if (error instanceof MimitSourceFetchError) throw error;
-    const msg = error instanceof Error ? error.message.slice(0, 120) : String(error).slice(0, 120);
-    const rec = error as unknown as Record<string, unknown>;
-    const code = rec?.code;
-    const causeCode = error instanceof Error && rec?.cause
-      ? (rec.cause as Record<string, unknown>)?.code
-      : undefined;
-    console.error(
-      "MIMIT_FETCH_ERROR " +
-        JSON.stringify({ resource: name, msg, code, causeCode }),
-    );
-    throw error;
   } finally {
     clearTimeout(timeout);
   }
@@ -115,18 +102,6 @@ export async function downloadMimitResource(
       cache: "no-store",
       signal: controller.signal,
     });
-  } catch (error) {
-    const msg = error instanceof Error ? error.message.slice(0, 120) : String(error).slice(0, 120);
-    const rec = error as unknown as Record<string, unknown>;
-    const code = rec?.code;
-    const causeCode = error instanceof Error && rec?.cause
-      ? (rec.cause as Record<string, unknown>)?.code
-      : undefined;
-    console.error(
-      "MIMIT_DOWNLOAD_ERROR " +
-        JSON.stringify({ resource: name, msg, code, causeCode }),
-    );
-    throw error;
   } finally {
     clearTimeout(timeout);
   }

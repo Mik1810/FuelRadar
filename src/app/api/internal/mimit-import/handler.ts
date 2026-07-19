@@ -143,21 +143,10 @@ export function createMimitImportHandler(
         );
       }
 
-      let errorMessage: string;
-      try {
-        errorMessage = error instanceof Error ? error.message : String(error);
-      } catch {
-        errorMessage = "(unreadable error)";
-      }
-      const sanitized = errorMessage
-        .replaceAll(cronSecret, "[redacted]")
-        .split("\n")[0]
-        .slice(0, 300);
       dependencies.logger.error(
         JSON.stringify({
           event: "mimit_import_failed",
           durationMs: now() - requestStartedAt,
-          errorMessage: sanitized,
         }),
       );
       return NextResponse.json(
