@@ -147,6 +147,8 @@ export function createMimitImportHandler(
         JSON.stringify({
           event: "mimit_import_failed",
           durationMs: now() - requestStartedAt,
+          errorName:
+            error instanceof Error ? error.constructor.name : typeof error,
         }),
       );
       return NextResponse.json(
