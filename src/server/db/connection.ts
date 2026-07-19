@@ -9,7 +9,6 @@ export function createDatabaseConnection(databaseUrl: string) {
     max: 1,
     idle_timeout: 20,
     connect_timeout: 10,
-    ssl: "require",
   });
 
   return {
