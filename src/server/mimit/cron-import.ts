@@ -530,6 +530,19 @@ export async function runMimitCronImport(
     try {
       claim = await claimRun(dependencies.sql, startedAt);
     } catch (error) {
+      let rawName = "non_error";
+      let rawCode = "<none>";
+      let rawMessage = "<none>";
+      const e = error as Record<string, unknown>;
+      if (error instanceof Error) {
+        rawName = error.constructor.name;
+        rawMessage = (error.message ?? "").slice(0, 200);
+      }
+      if (typeof e?.code === "string") rawCode = e.code.slice(0, 64);
+      console.error(
+        "DB_RAW_CLAIM_ERROR " +
+          JSON.stringify({ rawName, rawCode, rawMessage }),
+      );
       throw new MimitCronDatabaseUnavailableError(error);
     }
     if (!claim) {
