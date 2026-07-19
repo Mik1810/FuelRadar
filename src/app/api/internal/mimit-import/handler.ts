@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import { NextResponse } from "next/server";
 
 import {
@@ -145,45 +143,21 @@ export function createMimitImportHandler(
         );
       }
 
-      let errorName: string;
-      let causeCode: string | undefined;
-      let errorHash: string | undefined;
-      let causeHash: string | undefined;
+      let errorMessage: string;
       try {
-        errorName = error instanceof Error ? error.constructor.name : typeof error;
-        const rec = error as unknown as Record<string, unknown>;
-        if (
-          error instanceof Error &&
-          rec?.cause &&
-          typeof rec.cause === "object"
-        ) {
-          causeCode = (rec.cause as Record<string, unknown>)?.code as
-            | string
-            | undefined;
-          if ((rec.cause as Record<string, unknown>)?.message) {
-            causeHash = createHash("sha256")
-              .update(String((rec.cause as Record<string, unknown>).message))
-              .digest("hex")
-              .slice(0, 16);
-          }
-        }
-        if (error instanceof Error && error.message) {
-          errorHash = createHash("sha256")
-            .update(error.message)
-            .digest("hex")
-            .slice(0, 16);
-        }
+        errorMessage = error instanceof Error ? error.message : String(error);
       } catch {
-        errorName = "unreadable";
+        errorMessage = "(unreadable error)";
       }
+      const sanitized = errorMessage
+        .replaceAll(cronSecret, "[redacted]")
+        .split("\n")[0]
+        .slice(0, 300);
       dependencies.logger.error(
         JSON.stringify({
           event: "mimit_import_failed",
           durationMs: now() - requestStartedAt,
-          errorName,
-          causeCode: causeCode ?? undefined,
-          errorHash: errorHash ?? undefined,
-          causeHash: causeHash ?? undefined,
+          errorMessage: sanitized,
         }),
       );
       return NextResponse.json(
