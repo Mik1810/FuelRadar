@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { NextResponse } from "next/server";
 
 import {
@@ -145,6 +147,7 @@ export function createMimitImportHandler(
 
       let errorName: string;
       let causeCode: string | undefined;
+      let errorHash: string | undefined;
       try {
         errorName = error instanceof Error ? error.constructor.name : typeof error;
         const rec = error as unknown as Record<string, unknown>;
@@ -157,6 +160,12 @@ export function createMimitImportHandler(
             | string
             | undefined;
         }
+        if (error instanceof Error && error.message) {
+          errorHash = createHash("sha256")
+            .update(error.message)
+            .digest("hex")
+            .slice(0, 16);
+        }
       } catch {
         errorName = "unreadable";
       }
@@ -166,6 +175,7 @@ export function createMimitImportHandler(
           durationMs: now() - requestStartedAt,
           errorName,
           causeCode: causeCode ?? undefined,
+          errorHash: errorHash ?? undefined,
         }),
       );
       return NextResponse.json(
