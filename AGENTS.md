@@ -1,33 +1,3 @@
-ChatGPT Plus
-
-
-
-
-
-Pasted text(20).txt
-Documento
-mi prepari un AGENTS.md a partire da questo? Togli i riferimenti a issue specifiche o a modelli specifici ma tieni il comportamento generale, rendilo più sintetico e efficiente:
-
-
-Elaborato per 2m 3s
-Ho preparato una versione più compatta, eliminando riferimenti a issue, PR, branch temporanei, migrazioni specifiche e modelli, mantenendo autonomia, orchestrazione multi-agente, sicurezza, workflow Git, database e test. 
-
-
-AGENTS.md
-
-
-scrivilo in inglese
-
-Ho tradotto e aggiornato integralmente il file in inglese.
-
-AGENTS.md
-
-
-Libreria
-/
-AGENTS.md
-
-
 # AGENTS.md
 
 ## Mission
