@@ -9,7 +9,7 @@ import {
 } from "@/server/mimit/source-client";
 
 const { DATABASE_URL } = parseRuntimeEnv(process.env);
-const sql = postgres(DATABASE_URL, {
+const sql = postgres(DATABASE_URL.trim(), {
   prepare: false,
   max: 1,
   connect_timeout: 10,
