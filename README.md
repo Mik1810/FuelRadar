@@ -47,6 +47,8 @@ The reproducible static municipality catalog is documented in
 [`docs/municipalities.md`](docs/municipalities.md).
 Browser-only preferences and GPS lifecycle are documented in
 [`docs/browser-state.md`](docs/browser-state.md).
+The responsive home layout and its accessible state contract are documented in
+[`docs/mvp-shell.md`](docs/mvp-shell.md).
 
 ## Data source
 
