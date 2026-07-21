@@ -4,7 +4,8 @@ import { parseRuntimeEnv } from "@/config/server-env";
 import { createDatabaseConnection } from "@/server/db/connection";
 
 const { DATABASE_URL } = parseRuntimeEnv(process.env);
-const { db, sqlClient } = createDatabaseConnection(DATABASE_URL);
+const connection = createDatabaseConnection(DATABASE_URL);
+const { db } = connection;
 
 try {
   const result = await db.execute<{
@@ -31,5 +32,5 @@ try {
 
   console.log("Database connection verified: fuelradar schema and PostGIS are available.");
 } finally {
-  await sqlClient.end({ timeout: 5 });
+  await connection.close();
 }

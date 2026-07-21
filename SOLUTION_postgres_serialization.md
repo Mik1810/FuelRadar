@@ -1,4 +1,4 @@
-# Solution: Proxy-based SQL parameter serializer
+# Solution: isolate raw SQL and Drizzle postgres.js clients
 
 ## File
 
@@ -6,54 +6,35 @@
 
 ## Approach
 
-A `Proxy` wraps the `postgres` SQL client and intercepts all tagged template calls (`sql\`...\``). Every parameter is converted to a PostgreSQL-safe primitive **before** it reaches the `postgres` package.
+FuelRadar now creates two lazy postgres.js clients from the same trimmed runtime
+URL and conservative pool settings:
 
-## Implementation
+- `sqlClient` is reserved for raw tagged-template queries;
+- a private client is passed to Drizzle and exposed only through `db`.
 
-### `toSqlValue(value)` — parameter converter
+Drizzle can therefore install the serializers it needs without mutating the raw
+client used by the importer and nearby search. postgres.js retains its native
+Date, JSON, query-fragment, identifier, builder, array, and typed-parameter
+semantics; no Proxy or generic object conversion is involved.
 
-| Input type | Output |
-|---|---|
-| `null` / `undefined` | pass-through |
-| `string`, `number`, `boolean`, `bigint` | pass-through |
-| `Date` | `.toISOString()` |
-| `Buffer`, `ArrayBuffer` | pass-through |
-| Any other `object` | `JSON.stringify()` |
+Both clients have `max: 1` and connect lazily. A request that only uses the raw
+client does not open a Drizzle connection. The returned `close()` method closes
+both pools so scripts and development shutdown do not leak resources.
 
-### Proxy `apply` trap — intercepts `` sql`...` ``
+## Why this is safer
 
-```typescript
-apply(target, thisArg, [template, ...params]) {
-  return Reflect.apply(target, thisArg, [
-    template,
-    ...params.map(toSqlValue),
-  ]);
-}
-```
+- fixes the serializer ownership conflict at its boundary;
+- preserves the public postgres.js tagged-template contract;
+- keeps `sql.json()` typed as JSONB;
+- requires no special transaction or savepoint wrappers;
+- avoids silently converting query fragments or identifiers to JSON strings.
 
-### Proxy `get` trap — intercepts `.begin()` and `.json()`
+Focused contract tests verify client isolation, the native Date/JSON serializers,
+query composition, identifiers, and typed JSON parameters. Production endpoint
+verification remains the final check because the original failure appeared only
+in the deployed Node.js runtime.
 
-**`.begin()`** — handles both forms:
+## Related changes
 
-- `sql.begin()` → returns `Promise<TransactionSql>` → wraps result with same Proxy
-- `sql.begin(callback)` → wraps the transaction passed to the callback with same Proxy
-
-**`.json()`** — returns `JSON.stringify(obj)` directly instead of the internal `Parameter` object, bypassing the `instanceof` check that fails on Node.js.
-
-### Why this works
-
-- **Universal coverage**: every tagged template call in the entire codebase — including inside transactions, nested calls, Drizzle ORM internals — is intercepted
-- **Future-proof**: any new query that passes a `Date` or plain `Object` is automatically protected
-- **Runtime-agnostic**: works on both Bun and Node.js, local and Vercel
-- **Zero overhead on primitives**: strings, numbers, booleans, null pass through instantly
-- **No code changes needed**: existing queries work as-is; no manual serialization in any file
-
-## Files changed
-
-| File | Change |
-|---|---|
-| `src/server/db/connection.ts` | Added Proxy wrapper with `toSqlValue`, `apply` trap, `get` trap |
-| `src/server/mimit/source-client.ts` | Replaced `AbortSignal.timeout()` with `AbortController` (cleaner resource cleanup) |
-| `scripts/import-mimit.ts` | Added `.trim()` on DATABASE_URL |
-| `vercel.json` | Added `bunVersion: "1.x"` (faster builds) |
-| `package.json` | Added `bun --bun` to dev/build scripts |
+The earlier timeout cleanup, URL trimming, and Bun build configuration are
+separate operational changes; they are not the cause of this database fix.
