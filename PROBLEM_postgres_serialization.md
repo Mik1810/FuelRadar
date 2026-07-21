@@ -1,8 +1,8 @@
-# Problem: `postgres@3.4.9` serialization fails on Node.js runtime
+# Problem: Drizzle changes serializers on the shared postgres.js client
 
 ## Symptom
 
-On Vercel (Node.js runtime), all SQL template queries using the `postgres` npm package fail with:
+On the Vercel Node.js runtime, raw tagged-template queries failed with:
 
 ```
 TypeError [ERR_INVALID_ARG_TYPE]:
@@ -10,29 +10,29 @@ TypeError [ERR_INVALID_ARG_TYPE]:
   Buffer or ArrayBuffer. Received an instance of [Date|Object]
 ```
 
-The same code works perfectly on local Bun runtime.
+The same deployment configuration and database URL worked locally under Bun.
 
-## Root Cause
+## Root cause
 
-The `postgres@3.4.9` package internally uses `Buffer.from()` to serialize tagged template parameters before sending them to PostgreSQL. When a non-primitive JavaScript value is passed — `Date`, plain `Object`, or the package's own internal `Parameter` class — `Buffer.from()` throws because it only accepts `string`, `Buffer`, or `ArrayBuffer`.
+FuelRadar created one `postgres@3.4.9` client and passed that same object both to
+Drizzle and to the raw SQL importer. During construction, the Drizzle
+`postgres-js` adapter replaces the client's date and JSON serializers with
+identity functions. This is correct for values already encoded by Drizzle, but
+it also changes later raw tagged-template queries on the shared client.
 
-Three specific failure points were identified:
+Consequently, raw `Date` values and values produced by `sql.json()` could reach
+the Node.js buffer-writing path without the normal postgres.js conversion to an
+ISO or JSON string. The runtime then rejected the non-primitive value.
 
-### 1. Date objects
+The original diagnosis that postgres.js itself did not support Date or JSON
+serialization was incorrect: its default serializers handle both. No evidence
+confirmed an ESM/CJS `instanceof Parameter` failure.
 
-Parameters like `new Date()` are not auto-serialized to ISO strings by the Node.js pure-JS implementation. Bun's native PostgreSQL driver handles this transparently; Node.js does not.
+## Approaches that did not address the cause
 
-### 2. `sql.json()` / `transaction.json()` results
+- changing TLS options;
+- externalizing or bundling `postgres` in Next.js;
+- selecting Bun for the Vercel build step (the function runtime remained Node);
+- changing request timeout management.
 
-The `.json()` method returns an internal `Parameter` instance. On Node.js, `instanceof Parameter` checks fail (likely due to ESM/CJS module boundary), so the parameter is treated as a plain Object and rejected.
-
-### 3. Transaction callback (`sql.begin(callback)`)
-
-When `sql.begin(callback)` is used, the transaction object passed to the callback is the _raw_ TransactionSql, not a wrapped version. Any non-primitive parameter used inside the callback is not serialized.
-
-## Failed Attempts
-
-- `ssl: "require"` — unrelated (was a TLS config issue, not the cause)
-- `serverExternalPackages: ["postgres"]` — kept the package external to Next.js bundling, but the serialization bug persisted regardless
-- `bunVersion: "1.x"` on Vercel — makes Vercel use Bun for the build step, but the **runtime** remained Node.js and the bug persisted
-- `AbortSignal.timeout()` replacement — unrelated (improved compatibility but didn't fix the core issue)
+These changes did not isolate the serializer mutation on the shared client.

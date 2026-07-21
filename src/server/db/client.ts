@@ -23,5 +23,5 @@ if (process.env.NODE_ENV !== "production") {
 export const { db, sqlClient } = connection;
 
 export async function closeDatabaseConnection(): Promise<void> {
-  await sqlClient.end({ timeout: 5 });
+  await connection.close();
 }
