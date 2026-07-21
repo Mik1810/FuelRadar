@@ -49,6 +49,8 @@ Browser-only preferences and GPS lifecycle are documented in
 [`docs/browser-state.md`](docs/browser-state.md).
 The responsive home layout and its accessible state contract are documented in
 [`docs/mvp-shell.md`](docs/mvp-shell.md).
+The client-only Leaflet boundary, provider policy, and map failure behaviour are
+documented in [`docs/map.md`](docs/map.md).
 
 ## Data source
 

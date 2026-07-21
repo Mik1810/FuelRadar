@@ -77,12 +77,13 @@ describe("mobile MVP shell", () => {
     }
   });
 
-  test("server-renders one main landmark and an explicit location flow", () => {
+  test("server-renders the non-map shell and defers browser-only mapping", () => {
     const markup = renderToStaticMarkup(<FuelRadarShell />);
     expect(markup.match(/<main/g)).toHaveLength(1);
     expect(markup.match(/<h1/g)).toHaveLength(1);
     expect(markup).toContain("Vai al contenuto");
     expect(markup).toContain("Trova carburante vicino a te");
     expect(markup).toContain('aria-label="Navigazione principale"');
+    expect(markup).not.toContain("leaflet-container");
   });
 });
