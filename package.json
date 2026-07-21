@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "bun --bun next dev",
-    "build": "bun --bun next build",
+    "build": "bun --bun next build && bun run scripts/municipalities/check-build.ts",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -25,7 +25,9 @@
     "import:mimit": "bun run scripts/import-mimit.ts",
     "import:mimit:local": "bun run scripts/import-mimit-local.ts",
     "analyze:mimit": "bun run scripts/analyze-mimit-data.ts",
-    "query:nearby": "bun run scripts/query-mimit-nearby.ts"
+    "query:nearby": "bun run scripts/query-mimit-nearby.ts",
+    "municipalities:update": "uv run --project scripts/municipalities --frozen python scripts/municipalities/generate.py",
+    "municipalities:check": "uv run --project scripts/municipalities --frozen python -m unittest discover scripts/municipalities -p 'test_*.py' && uv run --project scripts/municipalities --frozen python scripts/municipalities/generate.py --check && bun run scripts/municipalities/check.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",

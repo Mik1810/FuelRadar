@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "retrievedAt": "2026-07-21",
+  "registryReferenceDate": "2026-02-21",
+  "boundariesReferenceDate": "2026-01-01",
+  "expectedMunicipalityCount": 7894,
+  "sources": [
+    {
+      "url": "https://www.istat.it/storage/codici-unita-amministrative/Elenco-comuni-italiani.xlsx",
+      "filename": "Elenco-comuni-italiani.xlsx",
+      "sha256": "83842076860450f7e482daecea6b7a769f5f93d0bf5b0d48802b44896d7a26d5",
+      "lastModified": "Thu, 26 Feb 2026 16:17:49 GMT",
+      "etag": "\"69a0722f-12c413:dtagent10339260603164134gZpz:dtagent10339260603164134gZpz\""
+    },
+    {
+      "url": "https://www.istat.it/storage/cartografia/confini_amministrativi/generalizzati/2026/Limiti01012026_g.zip",
+      "filename": "Limiti01012026_g.zip",
+      "sha256": "b011a590656c3a3ebc297fba80726a376aa843b6f164641cf6a4a990021a81d6",
+      "lastModified": "Fri, 06 Mar 2026 09:47:09 GMT",
+      "etag": "\"69aaa29d-9f76b1\""
+    }
+  ],
+  "geometrySources": {
+    "018094": [
+      "018094",
+      "018082"
+    ],
+    "024129": [
+      "024027",
+      "024071"
+    ]
+  },
+  "transformation": "Dissolve reviewed predecessor geometries in EPSG:32632; choose the largest polygon component; compute point_on_surface; transform to EPSG:4326; round to six decimals.",
+  "catalog": {
+    "filename": "municipalities-2026-02-21.13b3ccdf4326.json",
+    "sha256": "13b3ccdf4326d49e7b86adec57f4d7c620c96cb01c06dce997c23ebcce3c6cc5"
+  }
+}
