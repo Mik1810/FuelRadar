@@ -41,6 +41,8 @@ prefixed with `NEXT_PUBLIC_`.
 
 Database setup, connection roles and migration commands are documented in
 [`docs/database.md`](docs/database.md).
+The server-only frontend API contract is documented in
+[`docs/public-api.md`](docs/public-api.md).
 
 ## Data source
 

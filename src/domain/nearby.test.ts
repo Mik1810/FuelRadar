@@ -31,5 +31,14 @@ describe("nearbySearchSchema", () => {
         serviceMode: "self",
       }).success,
     ).toBeFalse();
+    expect(
+      nearbySearchSchema.safeParse({
+        latitude: 41.9,
+        longitude: 12.5,
+        radiusKm: 0.09,
+        fuelType: "benzina",
+        serviceMode: "self",
+      }).success,
+    ).toBeFalse();
   });
 });

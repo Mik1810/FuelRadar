@@ -16,6 +16,7 @@
     "db:reset": "bun run scripts/reset-local-database.ts",
     "db:test": "bun run scripts/test-local-database.ts",
     "db:test:import": "bun run scripts/verify-mimit-import.ts",
+    "db:test:api": "bun run scripts/verify-public-api.ts",
     "db:explain": "bun run scripts/verify-nearby-query-plan.ts",
     "db:push:dry": "SUPABASE_TELEMETRY_DISABLED=1 supabase db push --dry-run",
     "db:push": "SUPABASE_TELEMETRY_DISABLED=1 supabase db push",
