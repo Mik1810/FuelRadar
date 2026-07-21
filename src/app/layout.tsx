@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 
+import { BrowserStateBootstrap } from "@/browser/browser-state";
 import { SITE_DESCRIPTION, SITE_NAME } from "@/config/site";
 
 import "./globals.css";
@@ -22,7 +23,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="it">
-      <body>{children}</body>
+      <body>
+        <BrowserStateBootstrap />
+        {children}
+      </body>
     </html>
   );
 }
