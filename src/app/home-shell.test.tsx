@@ -82,8 +82,12 @@ describe("mobile MVP shell", () => {
     expect(markup.match(/<main/g)).toHaveLength(1);
     expect(markup.match(/<h1/g)).toHaveLength(1);
     expect(markup).toContain("Vai al contenuto");
-    expect(markup).toContain("Trova carburante vicino a te");
+    expect(markup).toContain("Usa la mia posizione GPS");
     expect(markup).toContain('aria-label="Navigazione principale"');
+    expect(markup).toContain('role="combobox"');
+    expect(markup).toContain("Carburante");
+    expect(markup).toContain("Self service");
+    expect(markup).toContain('id="radius-km"');
     expect(markup).not.toContain("leaflet-container");
   });
 });

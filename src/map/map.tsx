@@ -13,7 +13,14 @@ import {
   useMap,
   useMapEvents,
 } from "react-leaflet";
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  memo,
+  useRef,
+  useState,
+  type ComponentRef,
+  type RefObject,
+} from "react";
 
 import {
   tileAttributionHtml,
@@ -41,9 +48,13 @@ export type MapViewport = {
 export type FuelMapProps = {
   readonly provider: TileProvider;
   readonly origin: MapPosition | null;
+  /** Query center may follow a user-panned viewport without changing the saved origin. */
+  readonly searchCenter?: MapPosition | null;
   readonly gpsPosition?: (MapPosition & { readonly accuracyMeters: number }) | null;
   readonly radiusKm: number;
   readonly priceMarkers?: readonly PriceMarker[];
+  readonly selectedMarkerId?: string | null;
+  readonly onMarkerSelect?: (stationId: string) => void;
   readonly onViewportChange?: (viewport: MapViewport) => void;
 };
 
@@ -72,22 +83,64 @@ function MapAccessibility() {
   return null;
 }
 
-function PriceMarkerPin({ marker }: { marker: PriceMarker }) {
+const PriceMarkerPin = memo(function PriceMarkerPin({
+  marker,
+  selected,
+  onSelect,
+  clusterGroupRef,
+}: {
+  marker: PriceMarker;
+  selected: boolean;
+  onSelect?: (stationId: string) => void;
+  clusterGroupRef: RefObject<ComponentRef<typeof MarkerClusterGroup> | null>;
+}) {
+  const map = useMap();
+  const markerRef = useRef<L.Marker>(null);
   const priceLabel = formatFuelPrice(marker.price);
   const priceContent = document.createElement("span");
   priceContent.textContent = priceLabel;
   const icon = L.divIcon({
-    className: "price-marker-icon",
+    className: `price-marker-icon${selected ? " price-marker-icon--selected" : ""}`,
     html: priceContent,
     iconSize: [74, 32],
     iconAnchor: [37, 32],
   });
+  useEffect(() => {
+    if (!selected) return;
+    let cancelled = false;
+    let frame: number | null = null;
+    let attempts = 0;
+    const revealMarker = () => {
+      const selectedMarker = markerRef.current;
+      const clusterGroup = clusterGroupRef.current;
+      if (
+        !selectedMarker ||
+        !clusterGroup ||
+        !map.hasLayer(clusterGroup) ||
+        !clusterGroup.hasLayer(selectedMarker)
+      ) {
+        attempts += 1;
+        if (attempts < 10) frame = window.requestAnimationFrame(revealMarker);
+        return;
+      }
+      clusterGroup.zoomToShowLayer(selectedMarker, () => {
+        if (!cancelled) selectedMarker.openPopup();
+      });
+    };
+    revealMarker();
+    return () => {
+      cancelled = true;
+      if (frame !== null) window.cancelAnimationFrame(frame);
+    };
+  }, [clusterGroupRef, map, selected]);
   return (
     <Marker
+      ref={markerRef}
       position={latLng(marker.position)}
       icon={icon}
       title={marker.name}
       alt={`${marker.name}, ${priceLabel}`}
+      eventHandlers={{ click: () => onSelect?.(marker.id) }}
     >
       <Popup>
         <strong>{marker.name}</strong>
@@ -98,7 +151,7 @@ function PriceMarkerPin({ marker }: { marker: PriceMarker }) {
       </Popup>
     </Marker>
   );
-}
+});
 
 /** MapContainer options are immutable: only this child updates the view. */
 function ControlledSearchView({
@@ -150,6 +203,8 @@ function ViewportReporter({
 }) {
   const callbackRef = useRef(onViewportChange);
   const debounceRef = useRef<ReturnType<typeof createDebouncedCallback<MapViewport>> | null>(null);
+  const pendingUserInput = useRef(false);
+  const userMove = useRef(false);
 
   useEffect(() => {
     callbackRef.current = onViewportChange;
@@ -167,7 +222,13 @@ function ViewportReporter({
   }, []);
 
   const map = useMapEvents({
+    movestart() {
+      userMove.current = pendingUserInput.current;
+      pendingUserInput.current = false;
+    },
     moveend() {
+      if (!userMove.current) return;
+      userMove.current = false;
       const center = map.getCenter();
       const bounds = map.getBounds();
       debounceRef.current?.call({
@@ -182,6 +243,34 @@ function ViewportReporter({
       });
     },
   });
+
+  useEffect(() => {
+    const container = map.getContainer();
+    const recordUserInput = () => {
+      pendingUserInput.current = true;
+    };
+    const recordTransientUserInput = () => {
+      recordUserInput();
+      window.setTimeout(() => {
+        pendingUserInput.current = false;
+      }, 0);
+    };
+    const clearUnusedPointerInput = () => {
+      window.setTimeout(() => {
+        pendingUserInput.current = false;
+      }, 0);
+    };
+    container.addEventListener("pointerdown", recordUserInput, { passive: true });
+    container.addEventListener("pointerup", clearUnusedPointerInput, { passive: true });
+    container.addEventListener("wheel", recordTransientUserInput, { passive: true });
+    container.addEventListener("keydown", recordTransientUserInput, { capture: true });
+    return () => {
+      container.removeEventListener("pointerdown", recordUserInput);
+      container.removeEventListener("pointerup", clearUnusedPointerInput);
+      container.removeEventListener("wheel", recordTransientUserInput);
+      container.removeEventListener("keydown", recordTransientUserInput, { capture: true });
+    };
+  }, [map]);
 
   return null;
 }
@@ -231,14 +320,18 @@ function GpsPosition({
 export function FuelMap({
   provider,
   origin,
+  searchCenter = null,
   gpsPosition = null,
   radiusKm,
   priceMarkers = [],
+  selectedMarkerId = null,
+  onMarkerSelect,
   onViewportChange,
 }: FuelMapProps) {
   const [failedProvider, setFailedProvider] = useState<string | null>(null);
   const [tileAttempt, setTileAttempt] = useState(0);
   const tileBatchFailed = useRef(false);
+  const clusterGroupRef = useRef<ComponentRef<typeof MarkerClusterGroup>>(null);
   const configuredProvider = validateTileProvider(provider);
   const center = mapCenterFromOrigin(origin);
   const providerKey = `${configuredProvider.id}:${configuredProvider.url}`;
@@ -282,11 +375,19 @@ export function FuelMap({
         />
         <ControlledSearchView center={origin} radiusKm={radiusKm} />
         <ViewportReporter onViewportChange={onViewportChange} />
-        {origin ? <SearchCenter center={origin} radiusKm={radiusKm} /> : null}
+        {searchCenter ?? origin ? (
+          <SearchCenter center={searchCenter ?? origin!} radiusKm={radiusKm} />
+        ) : null}
         {gpsPosition ? <GpsPosition position={gpsPosition} /> : null}
-        <MarkerClusterGroup chunkedLoading>
+        <MarkerClusterGroup ref={clusterGroupRef} chunkedLoading>
           {priceMarkers.map((marker) => (
-            <PriceMarkerPin key={marker.id} marker={marker} />
+            <PriceMarkerPin
+              key={marker.id}
+              marker={marker}
+              selected={marker.id === selectedMarkerId}
+              onSelect={onMarkerSelect}
+              clusterGroupRef={clusterGroupRef}
+            />
           ))}
         </MarkerClusterGroup>
       </MapContainer>

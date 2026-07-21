@@ -203,6 +203,12 @@ a {
   white-space: nowrap;
 }
 
+.price-marker-icon--selected {
+  border-color: #f5c84c;
+  background: var(--focus);
+  box-shadow: 0 0 0 3px rgba(245, 200, 76, 0.48), 0 3px 12px rgba(23, 34, 26, 0.34);
+}
+
 .marker-cluster {
   border-radius: 50%;
   background: rgba(127, 155, 132, 0.42);
@@ -358,6 +364,230 @@ a {
   color: var(--muted);
   font-size: 0.8rem;
   line-height: 1.45;
+}
+
+.search-controls {
+  display: grid;
+  gap: 14px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.search-controls label,
+.search-controls legend {
+  color: var(--ink);
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.municipality-field {
+  position: relative;
+}
+
+.municipality-field > label,
+.radius-control {
+  display: grid;
+  gap: 7px;
+}
+
+.municipality-field input[type="search"] {
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px solid var(--sage-300);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.municipality-field p {
+  margin: 6px 1px 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.municipality-options {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  gap: 2px;
+  max-height: 220px;
+  padding: 4px;
+  margin: 6px 0 0;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid var(--sage-300);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(48, 72, 54, 0.12);
+}
+
+.municipality-options li {
+  display: grid;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+
+.municipality-options li:hover,
+.municipality-options [aria-selected="true"] {
+  background: var(--sage-100);
+}
+
+.municipality-options li span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.field-error,
+.search-feedback--error {
+  color: #8c2f22 !important;
+}
+
+.gps-action {
+  min-height: 46px;
+  padding: 9px 12px;
+  border: 1px solid var(--sage-700);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--sage-700);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.gps-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.search-controls fieldset {
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+.search-controls legend {
+  margin-bottom: 7px;
+}
+
+.filter-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.filter-options label {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--sage-300);
+  border-radius: 999px;
+  background: #fff;
+}
+
+.filter-options input {
+  accent-color: var(--focus);
+}
+
+.radius-control output {
+  justify-self: start;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--sage-100);
+  color: var(--sage-700);
+  font-variant-numeric: tabular-nums;
+}
+
+.radius-control input {
+  width: 100%;
+  accent-color: var(--focus);
+}
+
+.search-feedback,
+.dataset-status,
+.results-count {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.dataset-status {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--sage-100);
+}
+
+.dataset-status--stale {
+  background: #fff3d9;
+  color: #6c4c00;
+}
+
+.station-results {
+  display: grid;
+  gap: 9px;
+  padding: 0;
+  margin: 12px 0 0;
+  list-style: none;
+}
+
+.station-result {
+  display: grid;
+  width: 100%;
+  gap: 4px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.station-result:hover {
+  border-color: var(--sage-500);
+  background: var(--sage-50);
+}
+
+.station-result--selected {
+  border-color: var(--focus);
+  box-shadow: inset 0 0 0 1px var(--focus);
+}
+
+.station-result__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--sage-700);
+}
+
+.station-result__top strong {
+  color: var(--focus);
+  font-size: 1.05rem;
+}
+
+.station-result__brand {
+  font-weight: 800;
+}
+
+.station-result small {
+  margin-top: 3px;
+  color: var(--muted);
 }
 
 .location-summary {
