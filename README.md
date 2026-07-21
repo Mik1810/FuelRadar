@@ -43,6 +43,8 @@ Database setup, connection roles and migration commands are documented in
 [`docs/database.md`](docs/database.md).
 The server-only frontend API contract is documented in
 [`docs/public-api.md`](docs/public-api.md).
+The reproducible static municipality catalog is documented in
+[`docs/municipalities.md`](docs/municipalities.md).
 
 ## Data source
 
