@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import dynamic from "next/dynamic";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 
 import {
@@ -12,6 +13,19 @@ import {
 import type { GeolocationState } from "@/browser/geolocation";
 import { preferredSearchOrigin } from "@/browser/preferences";
 import { SITE_NAME, SITE_TAGLINE } from "@/config/site";
+import { OPENSTREETMAP_TILE_PROVIDER } from "@/map/config";
+
+const DynamicFuelMap = dynamic(
+  () => import("@/map/map").then((module) => module.FuelMap),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="map-loading" role="status" aria-live="polite">
+        Caricamento della mappa…
+      </div>
+    ),
+  },
+);
 
 export type ShellViewState =
   | "initial"
@@ -139,6 +153,16 @@ export function FuelRadarShell() {
     serverOnline,
   );
   const origin = preferredSearchOrigin(preferences);
+  const mapOrigin = origin
+    ? { latitude: origin.latitude, longitude: origin.longitude }
+    : null;
+  const gpsPosition = preferences.lastGpsPosition
+    ? {
+        latitude: preferences.lastGpsPosition.latitude,
+        longitude: preferences.lastGpsPosition.longitude,
+        accuracyMeters: preferences.lastGpsPosition.accuracyMeters,
+      }
+    : null;
   const viewState = resolveShellViewState({
     online,
     geolocation,
@@ -188,15 +212,12 @@ export function FuelRadarShell() {
           <h1 className="visually-hidden" id="map-title">
             {SITE_TAGLINE}
           </h1>
-          <div
-            className="map-placeholder"
-            role="img"
-            aria-label="Area della mappa dei distributori, in preparazione"
-          >
-            <span className="map-placeholder__radar" aria-hidden="true" />
-            <p>Mappa distributori</p>
-            <span>Qui compariranno prezzi e stazioni nella zona scelta.</span>
-          </div>
+          <DynamicFuelMap
+            provider={OPENSTREETMAP_TILE_PROVIDER}
+            origin={mapOrigin}
+            gpsPosition={gpsPosition}
+            radiusKm={preferences.radiusKm}
+          />
 
           <section
             ref={resultsRef}

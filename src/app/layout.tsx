@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { BrowserStateBootstrap } from "@/browser/browser-state";
 import { SITE_DESCRIPTION, SITE_NAME } from "@/config/site";
 
+import "leaflet/dist/leaflet.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
