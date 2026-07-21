@@ -45,6 +45,8 @@ The server-only frontend API contract is documented in
 [`docs/public-api.md`](docs/public-api.md).
 The reproducible static municipality catalog is documented in
 [`docs/municipalities.md`](docs/municipalities.md).
+Browser-only preferences and GPS lifecycle are documented in
+[`docs/browser-state.md`](docs/browser-state.md).
 
 ## Data source
 

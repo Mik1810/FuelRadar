@@ -1,8 +1,12 @@
 import { z } from "zod";
 
 import { FUEL_TYPES, SERVICE_MODES } from "@/domain/fuel";
+import {
+  MAX_STATION_ID_LENGTH,
+  STATION_ID_PATTERN,
+} from "@/domain/station-id";
 
-export const MAX_STATION_ID_LENGTH = 100;
+export { MAX_STATION_ID_LENGTH } from "@/domain/station-id";
 export const DATASET_FRESHNESS_MAX_AGE_DAYS = 1;
 
 const isoDateSchema = z.iso.date();
@@ -44,7 +48,7 @@ export const stationIdSchema = z
   .trim()
   .min(1)
   .max(MAX_STATION_ID_LENGTH)
-  .regex(/^[A-Za-z0-9._-]+$/);
+  .regex(STATION_ID_PATTERN);
 
 export const publicPriceSchema = z.object({
   fuelType: z.enum(FUEL_TYPES),
