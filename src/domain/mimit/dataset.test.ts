@@ -51,9 +51,10 @@ describe("parseMimitDataset", () => {
     ]);
     expect(result.diagnostics).toEqual({
       recoveredRows: { stations: 1, prices: 0 },
-      skippedStations: { missingId: 1, invalidCoordinates: 1 },
+      skippedStations: { missingId: 1, invalidId: 0, invalidCoordinates: 1 },
       skippedPrices: {
         missingStationId: 1,
+        invalidStationId: 0,
         unsupportedFuel: 1,
         invalidServiceMode: 1,
         invalidPrice: 1,
@@ -79,5 +80,25 @@ describe("parseMimitDataset", () => {
       expect(error).toBeInstanceOf(MimitCsvError);
       expect((error as MimitCsvError).message).toContain("do not match");
     }
+  });
+
+  test("skips station identifiers that cannot be used by detail URLs or favorites", () => {
+    const result = parseMimitDataset({
+      stationsText: [
+        "Estrazione del 2026-05-23",
+        "idImpianto|Gestore|Bandiera|Tipo Impianto|Nome Impianto|Indirizzo|Comune|Provincia|Latitudine|Longitudine",
+        "bad/id|Gestore|Brand|Stradale|Nome|Via Roma|ROMA|RM|41.9|12.5",
+      ].join("\n"),
+      pricesText: [
+        "Estrazione del 2026-05-23",
+        "idImpianto|descCarburante|prezzo|isSelf|dtComu",
+        "bad/id|Benzina|1.799|1|23/05/2026 07:05:09",
+      ].join("\n"),
+    });
+
+    expect(result.dataset.stations).toEqual([]);
+    expect(result.dataset.prices).toEqual([]);
+    expect(result.diagnostics.skippedStations.invalidId).toBe(1);
+    expect(result.diagnostics.skippedPrices.invalidStationId).toBe(1);
   });
 });

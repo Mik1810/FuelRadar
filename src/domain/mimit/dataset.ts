@@ -6,6 +6,7 @@ import type {
 import type { FuelType, ServiceMode } from "@/domain/fuel";
 import { MimitCsvError, parseMimitCsv } from "@/domain/mimit/csv";
 import type { MimitCsvData } from "@/domain/mimit/types";
+import { isStationId } from "@/domain/station-id";
 
 const SUPPORTED_FUELS: ReadonlyMap<string, FuelType> = new Map([
   ["benzina", "benzina"],
@@ -21,10 +22,12 @@ export type MimitDatasetDiagnostics = {
   };
   skippedStations: {
     missingId: number;
+    invalidId: number;
     invalidCoordinates: number;
   };
   skippedPrices: {
     missingStationId: number;
+    invalidStationId: number;
     unsupportedFuel: number;
     invalidServiceMode: number;
     invalidPrice: number;
@@ -98,9 +101,10 @@ function normalizeMimitDateTime(value: string): string | null {
 function emptyDiagnostics(): MimitDatasetDiagnostics {
   return {
     recoveredRows: { stations: 0, prices: 0 },
-    skippedStations: { missingId: 0, invalidCoordinates: 0 },
+    skippedStations: { missingId: 0, invalidId: 0, invalidCoordinates: 0 },
     skippedPrices: {
       missingStationId: 0,
+      invalidStationId: 0,
       unsupportedFuel: 0,
       invalidServiceMode: 0,
       invalidPrice: 0,
@@ -121,6 +125,10 @@ function parseStations(
     const id = field(row, headers, "idImpianto");
     if (!id) {
       diagnostics.skippedStations.missingId += 1;
+      continue;
+    }
+    if (!isStationId(id)) {
+      diagnostics.skippedStations.invalidId += 1;
       continue;
     }
 
@@ -161,6 +169,10 @@ function parsePrices(
     const stationId = field(row, headers, "idImpianto");
     if (!stationId) {
       diagnostics.skippedPrices.missingStationId += 1;
+      continue;
+    }
+    if (!isStationId(stationId)) {
+      diagnostics.skippedPrices.invalidStationId += 1;
       continue;
     }
 
