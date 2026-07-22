@@ -6,11 +6,13 @@ import {
   createBrowserPreferenceStore,
   DEFAULT_BROWSER_PREFERENCES,
   GPS_CURRENT_MAX_AGE_MS,
+  MAX_FAVORITES,
   gpsFreshness,
   gpsFreshnessRefreshDelay,
   parseBrowserPreferences,
   preferredSearchOrigin,
   readBrowserPreferences,
+  toggleFavoriteIds,
   type BrowserPreferences,
   type PreferencesStorage,
 } from "@/browser/preferences";
@@ -208,5 +210,26 @@ describe("browser preferences", () => {
       fuelType: "gpl",
       favorites: ["999"],
     });
+  });
+
+  test("toggles canonical favorites without duplicates, mutation or overflow", () => {
+    const original = ["123", "456"] as const;
+    expect(toggleFavoriteIds(original, "123")).toEqual(["456"]);
+    expect(toggleFavoriteIds(original, "789")).toEqual(["123", "456", "789"]);
+    expect(original).toEqual(["123", "456"]);
+    expect(toggleFavoriteIds(original, "bad/id")).toBe(original);
+    const full = Array.from({ length: MAX_FAVORITES }, (_, index) => String(index));
+    expect(toggleFavoriteIds(full, "new-station")).toBe(full);
+  });
+
+  test("persists favorite toggles across a fresh store hydration", () => {
+    const storage = new MemoryStorage();
+    const first = createBrowserPreferenceStore();
+    first.hydrate(storage, now);
+    expect(first.update((current) => ({ ...current, favorites: toggleFavoriteIds(current.favorites, "123") }), now)).toBeTrue();
+
+    const refreshed = createBrowserPreferenceStore();
+    refreshed.hydrate(storage, now);
+    expect(refreshed.getSnapshot().favorites).toEqual(["123"]);
   });
 });

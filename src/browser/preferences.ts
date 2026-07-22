@@ -6,7 +6,7 @@ export const BROWSER_PREFERENCES_VERSION = 1;
 export const BROWSER_PREFERENCES_KEY = "fuelradar:preferences";
 export const GPS_CURRENT_MAX_AGE_MS = 15 * 60 * 1_000;
 
-const MAX_FAVORITES = 500;
+export const MAX_FAVORITES = 500;
 const MAX_SERIALIZED_PREFERENCES_LENGTH = 128 * 1_024;
 const MUNICIPALITY_CODE = /^\d{6}$/;
 
@@ -372,4 +372,17 @@ export class BrowserPreferenceStore {
 
 export function createBrowserPreferenceStore(): BrowserPreferenceStore {
   return new BrowserPreferenceStore();
+}
+
+/** Returns a canonical, bounded favorite list without mutating the input. */
+export function toggleFavoriteIds(
+  favorites: readonly string[],
+  stationId: string,
+): readonly string[] {
+  if (!isStationId(stationId)) return favorites;
+  if (favorites.includes(stationId)) {
+    return favorites.filter((favoriteId) => favoriteId !== stationId);
+  }
+  if (favorites.length >= MAX_FAVORITES) return favorites;
+  return [...favorites, stationId];
 }

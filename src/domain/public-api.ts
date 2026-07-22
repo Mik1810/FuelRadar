@@ -32,8 +32,15 @@ const localCivilDateTimeSchema = z
     );
   });
 
+export const stationIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_STATION_ID_LENGTH)
+  .regex(STATION_ID_PATTERN);
+
 const stationFields = {
-  id: z.string().min(1).max(MAX_STATION_ID_LENGTH),
+  id: stationIdSchema,
   operator: z.string().max(256),
   brand: z.string().max(100),
   stationType: z.string().max(100),
@@ -42,13 +49,6 @@ const stationFields = {
   city: z.string().max(128),
   province: z.string().max(8),
 };
-
-export const stationIdSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(MAX_STATION_ID_LENGTH)
-  .regex(STATION_ID_PATTERN);
 
 export const publicPriceSchema = z.object({
   fuelType: z.enum(FUEL_TYPES),

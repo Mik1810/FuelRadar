@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   getDatasetFreshness,
+  publicNearbyStationSchema,
   publicPriceSchema,
   stationIdSchema,
 } from "@/domain/public-api";
@@ -13,6 +14,7 @@ describe("public API domain contracts", () => {
     expect(stationIdSchema.safeParse("x".repeat(101)).success).toBeFalse();
     expect(stationIdSchema.safeParse("station/42").success).toBeFalse();
     expect(stationIdSchema.safeParse("station\n42").success).toBeFalse();
+    expect(publicNearbyStationSchema.shape.id.safeParse("station/42").success).toBeFalse();
   });
 
   test("accepts only valid MIMIT local civil communication timestamps", () => {

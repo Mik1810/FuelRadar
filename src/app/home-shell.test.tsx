@@ -88,6 +88,8 @@ describe("mobile MVP shell", () => {
     expect(markup).toContain("Carburante");
     expect(markup).toContain("Self service");
     expect(markup).toContain('id="radius-km"');
+    expect(markup).toContain('id="favorites"');
+    expect(markup).toContain("Scheda distributore");
     expect(markup).not.toContain("leaflet-container");
   });
 });

@@ -53,6 +53,8 @@ The client-only Leaflet boundary, provider policy, and map failure behaviour are
 documented in [`docs/map.md`](docs/map.md).
 Station-search filters, validation, freshness labels, and list/marker behaviour
 are documented in [`docs/station-search.md`](docs/station-search.md).
+Station detail, directions, modal navigation, and local favorites are documented
+in [`docs/station-detail.md`](docs/station-detail.md).
 
 ## Data source
 

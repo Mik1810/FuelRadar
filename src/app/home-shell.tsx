@@ -21,7 +21,11 @@ import {
 } from "@/browser/browser-state";
 import { createMunicipalityProvider } from "@/browser/municipality-provider";
 import type { GeolocationState } from "@/browser/geolocation";
-import { preferredSearchOrigin } from "@/browser/preferences";
+import {
+  MAX_FAVORITES,
+  preferredSearchOrigin,
+  toggleFavoriteIds,
+} from "@/browser/preferences";
 import { SITE_NAME, SITE_TAGLINE } from "@/config/site";
 import type { FuelType, ServiceMode } from "@/domain/fuel";
 import type { MunicipalitySuggestion } from "@/domain/geocoding";
@@ -40,6 +44,7 @@ import {
   type StationSearchState,
 } from "@/search/station-search";
 import { nextComboboxIndex } from "@/search/combobox";
+import { StationDetailPanel } from "@/station-detail/station-detail-panel";
 
 const DynamicFuelMap = dynamic(
   () => import("@/map/map").then((module) => module.FuelMap),
@@ -143,6 +148,7 @@ export function FuelRadarShell() {
   const [municipalityError, setMunicipalityError] = useState<string | null>(null);
   const [searchState, setSearchState] = useState<StationSearchState>(INITIAL_STATION_SEARCH_STATE);
   const [selectedStationId, setSelectedStationId] = useState<string | null>(null);
+  const [detailStationId, setDetailStationId] = useState<string | null>(null);
   const [viewportOrigin, setViewportOrigin] = useState<(SearchOrigin & { sourceKey: string }) | null>(null);
   const preferences = useBrowserPreferences();
   const radiusKm = normalizeSearchRadiusKm(preferences.radiusKm);
@@ -184,6 +190,14 @@ export function FuelRadarShell() {
       : undefined;
   const markers = useMemo(
     () => (searchState.status === "ready" ? stationResultMarkers(searchState.result.stations) : []),
+    [searchState],
+  );
+  const nearbyStationsById = useMemo(
+    () => new Map(
+      searchState.status === "ready"
+        ? searchState.result.stations.map((station) => [station.id, station] as const)
+        : [],
+    ),
     [searchState],
   );
 
@@ -323,9 +337,31 @@ export function FuelRadarShell() {
     setViewportOrigin({ ...viewport.center, sourceKey: savedOriginKey });
   }
 
-  const selectStationFromMarker = useCallback((stationId: string): void => {
+  const openStationDetail = useCallback((stationId: string): void => {
     setSelectedStationId(stationId);
+    setDetailStationId(stationId);
+  }, []);
+
+  const openStationDetailFromMarker = useCallback((stationId: string): void => {
     resultButtons.current.get(stationId)?.focus();
+    setSelectedStationId(stationId);
+    setDetailStationId(stationId);
+  }, []);
+
+  const closeStationDetail = useCallback((): void => {
+    setDetailStationId(null);
+  }, []);
+
+  const openStationDetailFromHistory = useCallback((stationId: string): void => {
+    setSelectedStationId(stationId);
+    setDetailStationId(stationId);
+  }, []);
+
+  const toggleFavorite = useCallback((stationId: string): void => {
+    browserPreferenceStore.update((current) => ({
+      ...current,
+      favorites: toggleFavoriteIds(current.favorites, stationId),
+    }));
   }, []);
 
   return (
@@ -333,12 +369,12 @@ export function FuelRadarShell() {
       <a className="skip-link" href="#workspace">Vai al contenuto</a>
       <header className="app-header">
         <a className="brand" href="#top" aria-label={`${SITE_NAME}, inizio pagina`}><Image src="/logo.png" alt="" width={48} height={48} priority /><span>{SITE_NAME}</span></a>
-        <nav aria-label="Navigazione principale"><a href="#map">Mappa</a><a href="#results">Risultati</a></nav>
+        <nav aria-label="Navigazione principale"><a href="#map">Mappa</a><a href="#results">Risultati</a><a href="#favorites">Preferiti</a></nav>
       </header>
       <main className="app-workspace" id="workspace">
         <section className="map-stage" id="map" tabIndex={-1} aria-labelledby="map-title">
           <h1 className="visually-hidden" id="map-title">{SITE_TAGLINE}</h1>
-          <DynamicFuelMap provider={OPENSTREETMAP_TILE_PROVIDER} origin={mapOrigin} searchCenter={queryOrigin ? { latitude: queryOrigin.latitude, longitude: queryOrigin.longitude } : null} gpsPosition={gpsPosition} radiusKm={radiusKm} priceMarkers={markers} selectedMarkerId={activeSelectedStationId} onMarkerSelect={selectStationFromMarker} onViewportChange={handleViewportChange} />
+          <DynamicFuelMap provider={OPENSTREETMAP_TILE_PROVIDER} origin={mapOrigin} searchCenter={queryOrigin ? { latitude: queryOrigin.latitude, longitude: queryOrigin.longitude } : null} gpsPosition={gpsPosition} radiusKm={radiusKm} priceMarkers={markers} selectedMarkerId={activeSelectedStationId} onMarkerSelect={openStationDetailFromMarker} onViewportChange={handleViewportChange} />
           <section ref={resultsRef} className="results-sheet" id="results" tabIndex={-1} aria-labelledby="results-title">
             <p className="eyebrow">{SITE_TAGLINE}</p>
             <ShellStatePanel state={viewState} message={errorMessage} />
@@ -359,15 +395,38 @@ export function FuelRadarShell() {
 
             {origin?.source === "gps" ? <p className="location-summary">{freshness.status === "stale" ? "Ultima posizione GPS nota" : geolocation === "watching" ? "Posizione GPS aggiornata" : "Posizione GPS salvata"} · accuratezza ±{Math.round(origin.accuracyMeters)} m</p> : origin?.source === "municipality" ? <p className="location-summary">Ricerca da {origin.municipality.name}, {origin.municipality.province} · {origin.municipality.region}</p> : null}
             {!origin ? <p className="location-actions">Scegli un comune o usa il GPS per avviare la ricerca.</p> : null}
+            <section className="favorites" id="favorites" aria-labelledby="favorites-title">
+              <h2 id="favorites-title">Preferiti <span>{preferences.favorites.length}</span></h2>
+              {preferences.favorites.length > 0 ? (
+                <ul>
+                  {preferences.favorites.map((stationId) => {
+                    const nearby = nearbyStationsById.get(stationId);
+                    const label = nearby?.name || nearby?.brand || nearby?.operator || `Distributore ${stationId}`;
+                    return <li key={stationId}><button type="button" onClick={() => openStationDetail(stationId)}><strong>{label}</strong><span>{nearby ? `${nearby.address}, ${nearby.city}` : "Apri il dettaglio salvato"}</span></button></li>;
+                  })}
+                </ul>
+              ) : <p>I distributori che salvi restano disponibili su questo dispositivo.</p>}
+            </section>
             <SearchFeedback state={searchState} />
             {hasSearchResponse ? <>
               <p className={`dataset-status${searchState.result.freshness.status === "stale" ? " dataset-status--stale" : ""}`} role={searchState.result.freshness.status === "stale" ? "status" : undefined}>Dati del dataset estratti il {searchState.result.extractionDate}{searchState.result.freshness.status === "stale" ? ` · aggiornamento non recente (${searchState.result.freshness.ageDays} giorni)` : ""}.</p>
               {hasResults ? <><p className="results-count">{searchState.result.stations.length} {searchState.result.stations.length === 1 ? "distributore" : "distributori"} nell’ordine dell’API: prezzo, distanza e identificativo.</p>
-              <ul className="station-results" aria-label="Distributori trovati">{searchState.result.stations.map((station) => <li key={station.id}><button ref={(element) => { if (element) resultButtons.current.set(station.id, element); else resultButtons.current.delete(station.id); }} className={activeSelectedStationId === station.id ? "station-result station-result--selected" : "station-result"} type="button" aria-pressed={activeSelectedStationId === station.id} onClick={() => setSelectedStationId(station.id)}><span className="station-result__top"><strong>{formatFuelPrice(station.price)}</strong><span>{formatDistance(station.distanceKm)}</span></span><span className="station-result__brand">{station.brand || station.operator || "Marchio non comunicato"}</span><span>{station.address}, {station.city} ({station.province})</span><small>Prezzo comunicato: {formatCommunicatedAt(station.communicatedAt)}</small></button></li>)}</ul></> : null}
+              <ul className="station-results" aria-label="Distributori trovati">{searchState.result.stations.map((station) => <li key={station.id}><button ref={(element) => { if (element) resultButtons.current.set(station.id, element); else resultButtons.current.delete(station.id); }} className={activeSelectedStationId === station.id ? "station-result station-result--selected" : "station-result"} type="button" aria-pressed={activeSelectedStationId === station.id} onClick={() => openStationDetail(station.id)}><span className="station-result__top"><strong>{formatFuelPrice(station.price)}</strong><span>{formatDistance(station.distanceKm)}</span></span><span className="station-result__brand">{station.brand || station.operator || "Marchio non comunicato"}</span><span>{station.address}, {station.city} ({station.province})</span><small>Prezzo comunicato: {formatCommunicatedAt(station.communicatedAt)}</small></button></li>)}</ul></> : null}
             </> : null}
           </section>
         </section>
       </main>
+      <StationDetailPanel
+        stationId={detailStationId}
+        nearbyStation={detailStationId ? nearbyStationsById.get(detailStationId) ?? null : null}
+        favorite={detailStationId ? preferences.favorites.includes(detailStationId) : false}
+        favoriteLimitReached={preferences.favorites.length >= MAX_FAVORITES}
+        online={online}
+        fallbackFocusRef={resultsRef}
+        onRequestOpen={openStationDetailFromHistory}
+        onRequestClose={closeStationDetail}
+        onToggleFavorite={toggleFavorite}
+      />
     </div>
   );
 }

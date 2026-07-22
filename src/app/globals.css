@@ -595,6 +595,244 @@ a {
   border-top: 1px solid var(--border);
 }
 
+.favorites {
+  padding: 14px 0;
+  margin-top: 16px;
+  border-block: 1px solid var(--border);
+}
+
+.favorites h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 1rem;
+}
+
+.favorites h2 span {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--sage-100);
+  color: var(--sage-700);
+  font-size: 0.75rem;
+}
+
+.favorites > p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.favorites ul {
+  display: grid;
+  gap: 6px;
+  max-height: 180px;
+  padding: 0;
+  margin: 10px 0 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.favorites button {
+  display: grid;
+  width: 100%;
+  gap: 2px;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--sage-50);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.favorites button span {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.station-dialog {
+  width: min(100% - 24px, 560px);
+  max-height: min(88svh, 760px);
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+}
+
+.station-dialog::backdrop {
+  background: rgba(23, 34, 26, 0.62);
+  backdrop-filter: blur(2px);
+}
+
+.station-dialog__header {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 20px 12px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.97);
+}
+
+.station-dialog__header .eyebrow {
+  margin-bottom: 5px;
+}
+
+.station-dialog__header h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  line-height: 1.15;
+}
+
+.station-dialog__close {
+  display: grid;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--ink);
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.favorite-action {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 20px 0;
+  padding: 9px 12px;
+  border: 1px solid var(--sage-500);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--sage-700);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.favorite-action--active {
+  border-color: #c18b00;
+  background: #fff8df;
+  color: #6c4c00;
+}
+
+.favorite-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.station-dialog__content {
+  padding: 18px 20px max(22px, env(safe-area-inset-bottom));
+}
+
+.station-detail-summary {
+  display: grid;
+  gap: 5px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--sage-50);
+}
+
+.station-detail-summary p,
+.station-detail-message p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.station-dialog__content h3 {
+  margin: 20px 0 10px;
+  font-size: 1rem;
+}
+
+.station-price-list {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.station-price-list li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.station-price-list li > span {
+  display: grid;
+  gap: 3px;
+}
+
+.station-price-list li > span:last-child {
+  text-align: right;
+}
+
+.station-price-list small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.station-detail-message {
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--sage-50);
+}
+
+.station-detail-message h3 {
+  margin-top: 0;
+}
+
+.station-detail-message--error {
+  background: #fff0ed;
+  color: #8c2f22;
+}
+
+.station-detail-message button {
+  min-height: 44px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border: 1px solid currentColor;
+  border-radius: 10px;
+  background: #fff;
+  color: inherit;
+  font-weight: 800;
+}
+
+.directions-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.directions-actions a {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--sage-700);
+  color: #fff;
+  font-weight: 800;
+  text-decoration: none;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
