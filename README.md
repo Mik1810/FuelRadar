@@ -55,6 +55,8 @@ Station-search filters, validation, freshness labels, and list/marker behaviour
 are documented in [`docs/station-search.md`](docs/station-search.md).
 Station detail, directions, modal navigation, and local favorites are documented
 in [`docs/station-detail.md`](docs/station-detail.md).
+The sage design tokens, contrast rules, responsive reflow, and social metadata
+are documented in [`docs/visual-identity.md`](docs/visual-identity.md).
 
 ## Data source
 
