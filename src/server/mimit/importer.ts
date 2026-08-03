@@ -55,6 +55,7 @@ export type MimitImportDependencies = {
   now?: () => Date;
   beforeActivation?: (datasetId: string) => Promise<void>;
   afterActivation?: (datasetId: string) => Promise<void>;
+  pruneHistoricalDatasets?: boolean;
   claimedRun?: {
     id: string;
     startedAt: Date;
@@ -616,13 +617,15 @@ export async function runMimitImport(
         if (!stillActive) throw new MimitImportClaimLostError();
       }
 
-      const duplicateSnapshots = await transaction<
-        { station_count: number; price_count: number }[]
-      >`
-        delete from fuelradar.datasets
-        where not is_active and source_fingerprint = ${sourceHash}
-        returning station_count, price_count
-      `;
+      const duplicateSnapshots = dependencies.pruneHistoricalDatasets === false
+        ? []
+        : await transaction<
+            { station_count: number; price_count: number }[]
+          >`
+            delete from fuelradar.datasets
+            where not is_active and source_fingerprint = ${sourceHash}
+            returning station_count, price_count
+          `;
       const [created] = await transaction<{ id: string }[]>`
         insert into fuelradar.datasets (
           extraction_date,
@@ -687,13 +690,15 @@ export async function runMimitImport(
       `;
       await dependencies.afterActivation?.(created.id);
 
-      const retiredSnapshots = await transaction<
-        { station_count: number; price_count: number }[]
-      >`
-        delete from fuelradar.datasets
-        where id <> ${created.id}::bigint
-        returning station_count, price_count
-      `;
+      const retiredSnapshots = dependencies.pruneHistoricalDatasets === false
+        ? []
+        : await transaction<
+            { station_count: number; price_count: number }[]
+          >`
+            delete from fuelradar.datasets
+            where id <> ${created.id}::bigint
+            returning station_count, price_count
+          `;
       const pruned = [...duplicateSnapshots, ...retiredSnapshots];
 
       const [retained] = await transaction<
@@ -704,7 +709,11 @@ export async function runMimitImport(
           count(*) filter (where is_active)::integer as active_count
         from fuelradar.datasets
       `;
-      if (retained?.dataset_count !== 1 || retained.active_count !== 1) {
+      if (
+        retained?.active_count !== 1 ||
+        (dependencies.pruneHistoricalDatasets !== false &&
+          retained.dataset_count !== 1)
+      ) {
         throw new Error(
           `The active-only retention invariant failed: datasets=${retained?.dataset_count ?? "missing"}, active=${retained?.active_count ?? "missing"}.`,
         );

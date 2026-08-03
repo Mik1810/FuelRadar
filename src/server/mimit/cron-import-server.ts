@@ -12,7 +12,9 @@ import {
   isTransientMimitFetchError,
 } from "@/server/mimit/source-client";
 
-export async function runServerMimitCronImport(): Promise<MimitCronResult> {
+export async function runServerMimitCronImport(input?: {
+  pruneHistoricalDatasets?: boolean;
+}): Promise<MimitCronResult> {
   let sqlClient: (typeof import("@/server/db/client"))["sqlClient"];
   try {
     ({ sqlClient } = await import("@/server/db/client"));
@@ -29,5 +31,6 @@ export async function runServerMimitCronImport(): Promise<MimitCronResult> {
     downloadStations: downloadMimitStations,
     downloadPrices: downloadMimitPrices,
     isTransientFetchError: isTransientMimitFetchError,
+    pruneHistoricalDatasets: input?.pruneHistoricalDatasets,
   });
 }

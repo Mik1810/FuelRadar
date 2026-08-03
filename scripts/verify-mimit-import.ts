@@ -123,6 +123,23 @@ try {
     "The daily price refresh downloaded stations.",
   );
 
+  const gatedRetention = await runMimitImport({
+    sql,
+    now,
+    fetchMetadata: async () => metadata("v3"),
+    downloadStations: async () => download(pricesText, "\n\n\n\n\n\n").stations,
+    downloadPrices: async () => download(pricesText, "\n\n\n\n\n\n").prices,
+    pruneHistoricalDatasets: false,
+  });
+  const [{ dataset_count: gatedDatasetCount }] = await sql<
+    { dataset_count: number }[]
+  >`select count(*)::int as dataset_count from fuelradar.datasets`;
+  assert(
+    gatedRetention.maintenance?.prunedDatasetCount === 0 &&
+      gatedDatasetCount === 2,
+    "The disabled retention gate deleted a dataset.",
+  );
+
   let malformedFailed = false;
   try {
     await runMimitImport({
@@ -311,10 +328,10 @@ try {
   `;
   assert(summary?.active_count === 1, "More than one dataset is active.");
   assert(summary.dataset_count === 1, "Retention left an inactive dataset behind.");
-  assert(summary.succeeded === 4, "Unexpected successful run count.");
+  assert(summary.succeeded === 5, "Unexpected successful run count.");
   assert(summary.skipped === 2, "Unexpected skipped run count.");
   assert(summary.failed === 4, "Unexpected failed run count.");
-  assert(summary.detached_successes === 3, "Historical import runs were not detached.");
+  assert(summary.detached_successes === 4, "Historical import runs were not detached.");
   assert(summary.orphan_prices === 0, "Retention left orphan prices.");
   assert(summary.leaked_errors === 0, "An import error leaked unsafe details.");
 

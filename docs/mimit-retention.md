@@ -6,6 +6,10 @@ Disable the Vercel cron first, wait until no import is `running`, and use a
 direct or session-mode PostgreSQL connection. Never put credentials in command
 arguments or logs.
 
+Keep the production `MIMIT_RETENTION_ENABLED` variable unset or `false` until
+the cleanup is approved. After the guarded cleanup succeeds, set it to `true`
+for Production and redeploy before re-enabling the cron.
+
 ## Backup and rehearsal
 
 Create a custom-format logical backup through a protected `PGSERVICE` entry:
