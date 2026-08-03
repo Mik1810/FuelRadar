@@ -14,7 +14,7 @@ describe("server environment", () => {
       }),
     ).toEqual({
       DATABASE_URL: "postgresql://user:password@pooler.example.com:6543/postgres",
-      MIMIT_RETENTION_ENABLED: false,
+      MIMIT_RETENTION_ENABLED: true,
     });
 
     expect(
@@ -28,13 +28,20 @@ describe("server environment", () => {
     });
   });
 
-  test("requires an explicit true value for remote retention", () => {
+  test("allows an explicit retention override", () => {
     expect(
       parseRuntimeEnv({
         DATABASE_URL: "postgresql://user:password@pooler.example.com:6543/postgres",
         MIMIT_RETENTION_ENABLED: "true",
       }).MIMIT_RETENTION_ENABLED,
     ).toBe(true);
+
+    expect(
+      parseRuntimeEnv({
+        DATABASE_URL: "postgresql://user:password@pooler.example.com:6543/postgres",
+        MIMIT_RETENTION_ENABLED: "false",
+      }).MIMIT_RETENTION_ENABLED,
+    ).toBe(false);
 
     expect(() =>
       parseRuntimeEnv({
