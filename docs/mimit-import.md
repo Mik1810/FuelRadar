@@ -37,12 +37,30 @@ the same metadata version within 24 hours, the circuit breaker records a
 skipped run and waits for a new MIMIT version. The last active dataset is never
 removed before a fully parsed replacement is inserted and activated.
 
+Prices are checked and downloaded daily. The station registry is downloaded on
+the first import and then every 30 days. Between refreshes, the importer copies
+the last validated station snapshot inside PostgreSQL and downloads only the
+price file. A station refresh is brought forward when unavailable station IDs
+become material: at least 100 affected price rows, or at least 10 rows and 1%
+of accepted plus unavailable prices. A fresh station/price pair must have the
+same extraction date; a reused station snapshot may be older than the prices.
+
 Each invocation first creates a persistent `running` claim in a short database
 transaction guarded by a non-blocking advisory lock. Network requests and CSV
 parsing then happen outside database transactions. A process terminated by the
 platform leaves its claim visible; after the 15-minute lease expires, the next
 invocation marks that stale run as failed and safely claims a replacement. The
-final dataset insertion and activation remain one atomic database transaction.
+final dataset insertion, activation, and deletion of every preceding dataset
+remain one atomic database transaction. A successful changed import therefore
+leaves exactly one dataset. Any insertion, activation, or retention failure
+rolls the transaction back and preserves the previous active dataset.
+
+Successful structured logs include non-sensitive retention counts and whether
+stations were refreshed. The public HTTP response remains intentionally small.
+
+The one-time production cleanup and physical space recovery procedure is
+documented in `docs/mimit-retention.md` and must not be executed without an
+explicit maintenance approval.
 
 ## Manual relaunch and preview verification
 

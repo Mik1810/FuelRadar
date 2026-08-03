@@ -8,6 +8,8 @@ export type MimitResourceMetadata = {
   contentLength: number | null;
   contentType: string | null;
   checkedAt: string;
+  /** SHA-256 of the downloaded body when this exact resource was persisted. */
+  contentFingerprint?: string;
 };
 
 export type MimitResourceDownload = {

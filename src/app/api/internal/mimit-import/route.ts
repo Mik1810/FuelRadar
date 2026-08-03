@@ -6,6 +6,7 @@ import { MimitCronConfigurationError } from "@/server/mimit/cron-import";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 const handleImport = createMimitImportHandler({
   getSecret: () => parseCronEnv(process.env).CRON_SECRET,

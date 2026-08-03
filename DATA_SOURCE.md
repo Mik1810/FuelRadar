@@ -181,23 +181,27 @@ The scheduled server import should:
 
 - request metadata for both resources and compare `ETag` and `Last-Modified`
   when available;
-- skip the download when the published resources are unchanged;
-- download both files and require matching extraction dates;
-- parse and validate the complete pair before changing active data;
+- download and validate the price file every time its version changes;
+- reuse the last validated station snapshot for daily price imports;
+- refresh the station registry every 30 days, or earlier when at least 100
+  accepted price rows reference unavailable stations, or when at least 10 such
+  rows represent 1% of accepted plus unavailable prices;
+- require matching extraction dates when both resources are freshly downloaded;
+- allow the reused station extraction to predate the daily price extraction;
 - keep the last successfully published dataset available after any failure.
 
 The database import should be staged:
 
-- download files;
+- download prices and, only when due, stations;
 - parse extraction date and headers;
 - parse rows;
 - normalize fuel and service mode;
 - reject unsupported fuels;
 - reject invalid prices;
 - reject map rows with invalid coordinates;
-- write into PostgreSQL/PostGIS staging tables in the isolated `fuelradar`
-  schema;
-- swap staging data into active tables only after the import succeeds.
+- insert a complete unpublished snapshot in the isolated `fuelradar` schema;
+- copy stations from the active snapshot when a station refresh is not due;
+- activate the replacement and delete every previous dataset in one transaction.
 
 Suggested tables:
 

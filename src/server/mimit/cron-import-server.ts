@@ -6,7 +6,8 @@ import {
   type MimitCronResult,
 } from "@/server/mimit/cron-import";
 import {
-  downloadMimitDataset,
+  downloadMimitPrices,
+  downloadMimitStations,
   fetchMimitDatasetMetadata,
   isTransientMimitFetchError,
 } from "@/server/mimit/source-client";
@@ -25,7 +26,8 @@ export async function runServerMimitCronImport(): Promise<MimitCronResult> {
   return runMimitCronImport({
     sql: sqlClient,
     fetchMetadata: fetchMimitDatasetMetadata,
-    downloadDataset: downloadMimitDataset,
+    downloadStations: downloadMimitStations,
+    downloadPrices: downloadMimitPrices,
     isTransientFetchError: isTransientMimitFetchError,
   });
 }

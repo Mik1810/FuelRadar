@@ -5,15 +5,22 @@ import type postgres from "postgres";
 import type { FuelRadarDataset } from "@/domain/dataset";
 import {
   parseMimitDataset,
+  parseMimitPricesResource,
+  type MimitDatasetDiagnostics,
 } from "@/domain/mimit/dataset";
 import type {
   MimitDatasetMetadata,
   MimitResourceDownload,
+  MimitResourceMetadata,
 } from "@/domain/mimit/source";
 
 export const IMPORT_LOCK_KEY = "fuelradar:mimit-import:v1";
 const INSERT_CHUNK_SIZE = 2_000;
 const MAX_DATABASE_INTEGER = 2_147_483_647;
+export const STATION_REFRESH_INTERVAL_MS = 30 * 24 * 60 * 60 * 1_000;
+const UNKNOWN_STATION_ABSOLUTE_THRESHOLD = 100;
+const UNKNOWN_STATION_RATIO_THRESHOLD = 0.01;
+const UNKNOWN_STATION_RATIO_MINIMUM = 10;
 
 export class MimitImportClaimLostError extends Error {
   constructor() {
@@ -32,21 +39,33 @@ export type MimitImportResult = {
   priceCount: number;
   durationMs: number;
   reason?: "metadata-unchanged" | "content-unchanged" | "already-running";
+  maintenance?: {
+    stationsRefreshed: boolean;
+    prunedDatasetCount: number;
+    prunedStationCount: number;
+    prunedPriceCount: number;
+  };
 };
 
 export type MimitImportDependencies = {
   sql: postgres.Sql | postgres.TransactionSql;
   fetchMetadata: () => Promise<MimitDatasetMetadata>;
-  downloadDataset: () => Promise<{
-    stations: MimitResourceDownload;
-    prices: MimitResourceDownload;
-  }>;
+  downloadStations: () => Promise<MimitResourceDownload>;
+  downloadPrices: () => Promise<MimitResourceDownload>;
   now?: () => Date;
   beforeActivation?: (datasetId: string) => Promise<void>;
+  afterActivation?: (datasetId: string) => Promise<void>;
   claimedRun?: {
     id: string;
     startedAt: Date;
   };
+};
+
+type ActiveDatasetSnapshot = {
+  id: string;
+  stationsExtractionDate: string;
+  stationCount: number;
+  sourceMetadata: MimitDatasetMetadata | null;
 };
 
 function sha256(value: string): string {
@@ -76,33 +95,76 @@ export function getMimitMetadataFingerprint(
   return versions.every(Boolean) ? sha256(JSON.stringify(versions)) : null;
 }
 
+export function getMimitResourceMetadataFingerprint(
+  metadata: MimitResourceMetadata,
+): string | null {
+  if (!metadata.etag && !metadata.lastModified) return null;
+  return sha256(
+    JSON.stringify({
+      name: metadata.name,
+      etag: metadata.etag,
+      lastModified: metadata.lastModified,
+      contentLength: metadata.contentLength,
+    }),
+  );
+}
+
 export function getMimitCircuitFingerprint(
   metadata: MimitDatasetMetadata,
 ): string {
-  const strongFingerprint = getMimitMetadataFingerprint(metadata);
+  const strongFingerprint = getMimitResourceMetadataFingerprint(metadata.prices);
   if (strongFingerprint) return strongFingerprint;
 
   return sha256(
     JSON.stringify(
-      [metadata.stations, metadata.prices].map((resource) => ({
-        name: resource.name,
-        url: resource.url,
-        contentLength: resource.contentLength,
-        contentType: resource.contentType,
-      })),
+      {
+        name: metadata.prices.name,
+        url: metadata.prices.url,
+        contentLength: metadata.prices.contentLength,
+        contentType: metadata.prices.contentType,
+      },
     ),
   );
 }
 
-function contentFingerprint(download: {
-  stations: MimitResourceDownload;
-  prices: MimitResourceDownload;
-}): string {
+function contentFingerprint(stations: string, prices: string): string {
   return sha256(
     JSON.stringify({
-      stations: sha256(download.stations.text),
-      prices: sha256(download.prices.text),
+      stations,
+      prices,
     }),
+  );
+}
+
+function resourceWithContentFingerprint(
+  metadata: MimitResourceMetadata,
+  download: MimitResourceDownload,
+): MimitResourceMetadata {
+  return { ...metadata, contentFingerprint: sha256(download.text) };
+}
+
+function stationRefreshIsDue(
+  active: ActiveDatasetSnapshot | undefined,
+  now: Date,
+): boolean {
+  if (!active?.sourceMetadata?.stations.contentFingerprint) return true;
+  const extractionTime = Date.parse(`${active.stationsExtractionDate}T00:00:00Z`);
+  return (
+    !Number.isFinite(extractionTime) ||
+    now.getTime() - extractionTime >= STATION_REFRESH_INTERVAL_MS
+  );
+}
+
+export function unavailablePricesRequireStationRefresh(
+  unavailable: number,
+  accepted: number,
+): boolean {
+  const total = unavailable + accepted;
+  return (
+    unavailable >= UNKNOWN_STATION_ABSOLUTE_THRESHOLD ||
+    (unavailable >= UNKNOWN_STATION_RATIO_MINIMUM &&
+      total > 0 &&
+      unavailable / total >= UNKNOWN_STATION_RATIO_THRESHOLD)
   );
 }
 
@@ -192,6 +254,24 @@ async function insertStations(
       )
     `;
   }
+}
+
+async function copyStations(
+  transaction: postgres.TransactionSql,
+  sourceDatasetId: string,
+  targetDatasetId: string,
+): Promise<void> {
+  await transaction`
+    insert into fuelradar.stations (
+      dataset_id, id, operator, brand, station_type, name, address, city,
+      province, location
+    )
+    select
+      ${targetDatasetId}::bigint, id, operator, brand, station_type, name,
+      address, city, province, location
+    from fuelradar.stations
+    where dataset_id = ${sourceDatasetId}::bigint
+  `;
 }
 
 async function insertPrices(
@@ -322,51 +402,168 @@ export async function runMimitImport(
   }
 
   try {
-    const metadata = await dependencies.fetchMetadata();
-    const metadataHash = getMimitMetadataFingerprint(metadata);
+    const observedMetadata = await dependencies.fetchMetadata();
+    const observedMetadataHash = getMimitMetadataFingerprint(observedMetadata);
 
     const [metadataUpdated] = await dependencies.sql<{ id: string }[]>`
       update fuelradar.import_runs
-      set source_etag = ${combinedHeader(metadata, "etag")},
-          source_last_modified = ${combinedHeader(metadata, "lastModified")},
-          metadata_fingerprint = coalesce(${metadataHash}, metadata_fingerprint),
-          source_metadata = ${dependencies.sql.json(metadata)}
+      set source_etag = ${combinedHeader(observedMetadata, "etag")},
+          source_last_modified = ${combinedHeader(observedMetadata, "lastModified")},
+          metadata_fingerprint = coalesce(
+            ${dependencies.claimedRun ? null : observedMetadataHash},
+            metadata_fingerprint
+          ),
+          source_metadata = ${dependencies.sql.json(observedMetadata)}
       where id = ${run.id}::bigint and status = 'running'
       returning id
     `;
     if (!metadataUpdated) throw new MimitImportClaimLostError();
 
-    if (metadataHash) {
-      const [unchanged] = await dependencies.sql<{ id: string }[]>`
+    const [active] = await dependencies.sql<ActiveDatasetSnapshot[]>`
+      select
+        id,
+        stations_extraction_date::text as "stationsExtractionDate",
+        station_count as "stationCount",
+        source_metadata as "sourceMetadata"
+      from fuelradar.datasets
+      where is_active
+      limit 1
+    `;
+    const refreshStations = stationRefreshIsDue(active, startedAt);
+    const currentPriceMetadataHash = getMimitResourceMetadataFingerprint(
+      observedMetadata.prices,
+    );
+    const activePriceMetadataHash = active?.sourceMetadata
+      ? getMimitResourceMetadataFingerprint(active.sourceMetadata.prices)
+      : null;
+
+    if (
+      !refreshStations &&
+      currentPriceMetadataHash &&
+      currentPriceMetadataHash === activePriceMetadataHash
+    ) {
+      return finishSkippedRun({
+        sql: dependencies.sql,
+        runId: run.id,
+        datasetId: active?.id ?? null,
+        startedAtMs: startedAt.getTime(),
+        now,
+        metadata: observedMetadata,
+        metadataFingerprint: observedMetadataHash,
+      });
+    }
+
+    let stationsDownload: MimitResourceDownload | undefined;
+    let pricesDownload: MimitResourceDownload;
+    if (refreshStations) {
+      [stationsDownload, pricesDownload] = await Promise.all([
+        dependencies.downloadStations(),
+        dependencies.downloadPrices(),
+      ]);
+    } else {
+      pricesDownload = await dependencies.downloadPrices();
+    }
+    let stationsRefreshed = Boolean(stationsDownload);
+    let reusedDatasetId: string | null = null;
+    let parsed: {
+      dataset: FuelRadarDataset;
+      diagnostics: MimitDatasetDiagnostics;
+    };
+
+    if (stationsDownload) {
+      parsed = parseMimitDataset({
+        stationsText: stationsDownload.text,
+        pricesText: pricesDownload.text,
+      });
+    } else {
+      if (!active?.sourceMetadata?.stations.contentFingerprint) {
+        throw new Error("The active station snapshot cannot be reused safely.");
+      }
+      const stationRows = await dependencies.sql<{ id: string }[]>`
         select id
-        from fuelradar.datasets
-        where is_active and metadata_fingerprint = ${metadataHash}
-        limit 1
+        from fuelradar.stations
+        where dataset_id = ${active.id}::bigint
       `;
-      if (unchanged) {
-        return finishSkippedRun({
-          sql: dependencies.sql,
-          runId: run.id,
-          datasetId: unchanged.id,
-          startedAtMs: startedAt.getTime(),
-          now,
-          metadata,
-          metadataFingerprint: metadataHash,
+      if (stationRows.length !== active.stationCount) {
+        throw new Error("The active station snapshot count is inconsistent.");
+      }
+      const parsedPrices = parseMimitPricesResource(
+        pricesDownload.text,
+        new Set(stationRows.map(({ id }) => id)),
+      );
+      if (active.stationsExtractionDate > parsedPrices.extractionDate) {
+        throw new Error(
+          "The price extraction predates the active station snapshot.",
+        );
+      }
+
+      if (
+        unavailablePricesRequireStationRefresh(
+          parsedPrices.skippedPrices.stationUnavailable,
+          parsedPrices.prices.length,
+        )
+      ) {
+        stationsDownload = await dependencies.downloadStations();
+        stationsRefreshed = true;
+        parsed = parseMimitDataset({
+          stationsText: stationsDownload.text,
+          pricesText: pricesDownload.text,
         });
+      } else {
+        reusedDatasetId = active.id;
+        parsed = {
+          dataset: {
+            extractionDate: parsedPrices.extractionDate,
+            metadata: {
+              stationsExtractionDate: active.stationsExtractionDate,
+              pricesExtractionDate: parsedPrices.extractionDate,
+            },
+            stations: [],
+            prices: parsedPrices.prices,
+          },
+          diagnostics: {
+            recoveredRows: { stations: 0, prices: parsedPrices.recoveredRows },
+            skippedStations: {
+              missingId: 0,
+              invalidId: 0,
+              invalidCoordinates: 0,
+            },
+            skippedPrices: parsedPrices.skippedPrices,
+          },
+        };
       }
     }
 
-    const download = await dependencies.downloadDataset();
-    const parsed = parseMimitDataset({
-      stationsText: download.stations.text,
-      pricesText: download.prices.text,
-    });
-    const sourceHash = contentFingerprint(download);
+    const stationCount = stationsRefreshed
+      ? parsed.dataset.stations.length
+      : active?.stationCount ?? 0;
+    const effectiveMetadata: MimitDatasetMetadata = {
+      stations: stationsDownload
+        ? resourceWithContentFingerprint(
+            observedMetadata.stations,
+            stationsDownload,
+          )
+        : active!.sourceMetadata!.stations,
+      prices: resourceWithContentFingerprint(
+        observedMetadata.prices,
+        pricesDownload,
+      ),
+    };
+    const metadataHash = getMimitMetadataFingerprint(effectiveMetadata);
+    const sourceHash = contentFingerprint(
+      effectiveMetadata.stations.contentFingerprint!,
+      effectiveMetadata.prices.contentFingerprint!,
+    );
 
     const [contentUpdated] = await dependencies.sql<{ id: string }[]>`
       update fuelradar.import_runs
       set source_fingerprint = ${sourceHash},
-          station_count = ${parsed.dataset.stations.length},
+          metadata_fingerprint = coalesce(
+            ${dependencies.claimedRun ? null : metadataHash},
+            metadata_fingerprint
+          ),
+          source_metadata = ${dependencies.sql.json(effectiveMetadata)},
+          station_count = ${stationCount},
           price_count = ${parsed.dataset.prices.length},
           diagnostics = ${dependencies.sql.json(parsed.diagnostics)}
       where id = ${run.id}::bigint and status = 'running'
@@ -392,7 +589,7 @@ export async function runMimitImport(
       const [unchanged] = await transaction<{ id: string }[]>`
         select id
         from fuelradar.datasets
-        where source_fingerprint = ${sourceHash}
+        where is_active and source_fingerprint = ${sourceHash}
         limit 1
       `;
       if (unchanged) {
@@ -402,13 +599,30 @@ export async function runMimitImport(
           datasetId: unchanged.id,
           startedAtMs: startedAt.getTime(),
           now,
-          metadata,
+          metadata: effectiveMetadata,
           metadataFingerprint: metadataHash,
           sourceFingerprint: sourceHash,
         });
       }
 
       const dataset = parsed.dataset;
+      if (reusedDatasetId) {
+        const [stillActive] = await transaction<{ id: string }[]>`
+          select id
+          from fuelradar.datasets
+          where is_active and id = ${reusedDatasetId}::bigint
+          for update
+        `;
+        if (!stillActive) throw new MimitImportClaimLostError();
+      }
+
+      const duplicateSnapshots = await transaction<
+        { station_count: number; price_count: number }[]
+      >`
+        delete from fuelradar.datasets
+        where not is_active and source_fingerprint = ${sourceHash}
+        returning station_count, price_count
+      `;
       const [created] = await transaction<{ id: string }[]>`
         insert into fuelradar.datasets (
           extraction_date,
@@ -425,20 +639,40 @@ export async function runMimitImport(
           ${dataset.extractionDate}::date,
           ${dataset.metadata.stationsExtractionDate}::date,
           ${dataset.metadata.pricesExtractionDate}::date,
-          ${combinedHeader(metadata, "etag")},
-          ${combinedHeader(metadata, "lastModified")},
+          ${combinedHeader(effectiveMetadata, "etag")},
+          ${combinedHeader(effectiveMetadata, "lastModified")},
           ${sourceHash},
           ${metadataHash},
-          ${transaction.json(metadata)},
-          ${dataset.stations.length},
+          ${transaction.json(effectiveMetadata)},
+          ${stationCount},
           ${dataset.prices.length}
         )
         returning id
       `;
       if (!created) throw new Error("Unable to create the MIMIT dataset.");
 
-      await insertStations(transaction, created.id, dataset);
+      if (reusedDatasetId) {
+        await copyStations(transaction, reusedDatasetId, created.id);
+      } else {
+        await insertStations(transaction, created.id, dataset);
+      }
       await insertPrices(transaction, created.id, dataset);
+
+      const [insertedCounts] = await transaction<
+        { station_count: number; price_count: number }[]
+      >`
+        select
+          (select count(*)::integer from fuelradar.stations
+            where dataset_id = ${created.id}::bigint) as station_count,
+          (select count(*)::integer from fuelradar.prices
+            where dataset_id = ${created.id}::bigint) as price_count
+      `;
+      if (
+        insertedCounts?.station_count !== stationCount ||
+        insertedCounts.price_count !== dataset.prices.length
+      ) {
+        throw new Error("The staged MIMIT dataset count is inconsistent.");
+      }
       await dependencies.beforeActivation?.(created.id);
 
       await transaction`
@@ -451,7 +685,30 @@ export async function runMimitImport(
         set is_active = true, activated_at = ${now()}
         where id = ${created.id}::bigint
       `;
+      await dependencies.afterActivation?.(created.id);
 
+      const retiredSnapshots = await transaction<
+        { station_count: number; price_count: number }[]
+      >`
+        delete from fuelradar.datasets
+        where id <> ${created.id}::bigint
+        returning station_count, price_count
+      `;
+      const pruned = [...duplicateSnapshots, ...retiredSnapshots];
+
+      const [retained] = await transaction<
+        { dataset_count: number; active_count: number }[]
+      >`
+        select
+          count(*)::integer as dataset_count,
+          count(*) filter (where is_active)::integer as active_count
+        from fuelradar.datasets
+      `;
+      if (retained?.dataset_count !== 1 || retained.active_count !== 1) {
+        throw new Error(
+          `The active-only retention invariant failed: datasets=${retained?.dataset_count ?? "missing"}, active=${retained?.active_count ?? "missing"}.`,
+        );
+      }
       const finishedAt = now();
       const durationMs = boundedDurationMs(
         startedAt.getTime(),
@@ -463,12 +720,12 @@ export async function runMimitImport(
             finished_at = ${finishedAt},
             duration_ms = ${durationMs},
             dataset_id = ${created.id}::bigint,
-            source_etag = ${combinedHeader(metadata, "etag")},
-            source_last_modified = ${combinedHeader(metadata, "lastModified")},
+            source_etag = ${combinedHeader(effectiveMetadata, "etag")},
+            source_last_modified = ${combinedHeader(effectiveMetadata, "lastModified")},
             source_fingerprint = ${sourceHash},
             metadata_fingerprint = ${metadataHash},
-            source_metadata = ${transaction.json(metadata)},
-            station_count = ${dataset.stations.length},
+            source_metadata = ${transaction.json(effectiveMetadata)},
+            station_count = ${stationCount},
             price_count = ${dataset.prices.length},
             diagnostics = ${transaction.json(parsed.diagnostics)}
         where id = ${run.id}::bigint and status = 'running'
@@ -480,9 +737,21 @@ export async function runMimitImport(
         runId: run.id,
         datasetId: created.id,
         status: "succeeded" as const,
-        stationCount: dataset.stations.length,
+        stationCount,
         priceCount: dataset.prices.length,
         durationMs,
+        maintenance: {
+          stationsRefreshed,
+          prunedDatasetCount: pruned.length,
+          prunedStationCount: pruned.reduce(
+            (total, row) => total + row.station_count,
+            0,
+          ),
+          prunedPriceCount: pruned.reduce(
+            (total, row) => total + row.price_count,
+            0,
+          ),
+        },
       };
     });
   } catch (error) {
