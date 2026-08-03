@@ -144,13 +144,10 @@ export async function downloadMimitResource(
   };
 }
 
-export async function downloadMimitDataset(): Promise<{
-  stations: MimitResourceDownload;
-  prices: MimitResourceDownload;
-}> {
-  const [stations, prices] = await Promise.all([
-    downloadMimitResource("stations"),
-    downloadMimitResource("prices"),
-  ]);
-  return { stations, prices };
+export function downloadMimitStations(): Promise<MimitResourceDownload> {
+  return downloadMimitResource("stations");
+}
+
+export function downloadMimitPrices(): Promise<MimitResourceDownload> {
+  return downloadMimitResource("prices");
 }

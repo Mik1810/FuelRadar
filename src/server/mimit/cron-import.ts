@@ -348,11 +348,6 @@ export class MimitCronDatabaseUnavailableError extends Error {
   }
 }
 
-type MimitDownload = {
-  stations: MimitResourceDownload;
-  prices: MimitResourceDownload;
-};
-
 type ClaimedRun = { id: string; startedAt: Date };
 
 export type MimitCronResult =
@@ -370,7 +365,8 @@ export type MimitCronResult =
 export type MimitCronDependencies = {
   sql: postgres.Sql;
   fetchMetadata: () => Promise<MimitDatasetMetadata>;
-  downloadDataset: () => Promise<MimitDownload>;
+  downloadStations: () => Promise<MimitResourceDownload>;
+  downloadPrices: () => Promise<MimitResourceDownload>;
   isTransientFetchError: (error: unknown) => boolean;
   now?: () => Date;
   sleep?: (milliseconds: number) => Promise<void>;
@@ -581,9 +577,15 @@ export async function runMimitCronImport(
     return await runMimitImport({
       sql: dependencies.sql,
       fetchMetadata: async () => metadata,
-      downloadDataset: () =>
+      downloadStations: () =>
         withTransientFetchRetry(
-          dependencies.downloadDataset,
+          dependencies.downloadStations,
+          dependencies.isTransientFetchError,
+          sleep,
+        ),
+      downloadPrices: () =>
+        withTransientFetchRetry(
+          dependencies.downloadPrices,
           dependencies.isTransientFetchError,
           sleep,
         ),

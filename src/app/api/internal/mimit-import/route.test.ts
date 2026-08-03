@@ -2,7 +2,11 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { runInNewContext } from "node:vm";
 
 import { createMimitImportHandler } from "@/app/api/internal/mimit-import/handler";
-import { GET, POST } from "@/app/api/internal/mimit-import/route";
+import {
+  GET,
+  maxDuration,
+  POST,
+} from "@/app/api/internal/mimit-import/route";
 import { fingerprintDatabaseUrl } from "@/server/mimit/cron-auth";
 import {
   MimitCronConfigurationError,
@@ -32,6 +36,10 @@ function collectingLogger() {
 }
 
 describe("internal MIMIT import route", () => {
+  test("allows the full Hobby Fluid Compute duration", () => {
+    expect(maxDuration).toBe(300);
+  });
+
   test("rejects unauthorized GET and POST requests before server import wiring", async () => {
     const previousSecret = process.env.CRON_SECRET;
     const previousDatabaseUrl = process.env.DATABASE_URL;
@@ -146,6 +154,12 @@ describe("internal MIMIT import route", () => {
           stationCount: 120,
           priceCount: 340,
           durationMs: 25,
+          maintenance: {
+            stationsRefreshed: false,
+            prunedDatasetCount: 1,
+            prunedStationCount: 120,
+            prunedPriceCount: 330,
+          },
         };
       },
       logger: log.logger,
@@ -173,6 +187,12 @@ describe("internal MIMIT import route", () => {
       stationCount: 120,
       priceCount: 340,
       durationMs: 25,
+      maintenance: {
+        stationsRefreshed: false,
+        prunedDatasetCount: 1,
+        prunedStationCount: 120,
+        prunedPriceCount: 330,
+      },
     });
   });
 

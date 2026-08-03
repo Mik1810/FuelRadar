@@ -79,7 +79,13 @@ export function createMimitImportHandler(
       const result = await dependencies.runImport();
       const payload = publicResult(result);
       dependencies.logger.info(
-        JSON.stringify({ event: "mimit_import_completed", ...payload }),
+        JSON.stringify({
+          event: "mimit_import_completed",
+          ...payload,
+          ...("maintenance" in result && result.maintenance
+            ? { maintenance: result.maintenance }
+            : {}),
+        }),
       );
       return NextResponse.json(payload, {
         status: result.reason === "already-running" ? 409 : 200,

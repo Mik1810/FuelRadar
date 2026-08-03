@@ -41,6 +41,20 @@ export type MimitDatasetParseResult = {
   diagnostics: MimitDatasetDiagnostics;
 };
 
+export type MimitStationsParseResult = {
+  extractionDate: string;
+  stations: FuelRadarStation[];
+  recoveredRows: number;
+  skippedStations: MimitDatasetDiagnostics["skippedStations"];
+};
+
+export type MimitPricesParseResult = {
+  extractionDate: string;
+  prices: FuelRadarPrice[];
+  recoveredRows: number;
+  skippedPrices: MimitDatasetDiagnostics["skippedPrices"];
+};
+
 function indexHeaders(headers: string[]): Map<string, number> {
   return new Map(headers.map((header, index) => [header, index]));
 }
@@ -111,6 +125,35 @@ function emptyDiagnostics(): MimitDatasetDiagnostics {
       invalidCommunicationDate: 0,
       stationUnavailable: 0,
     },
+  };
+}
+
+export function parseMimitStationsResource(
+  stationsText: string,
+): MimitStationsParseResult {
+  const stationsCsv = parseMimitCsv("stations", stationsText);
+  const diagnostics = emptyDiagnostics();
+
+  return {
+    extractionDate: stationsCsv.extractionDate,
+    stations: parseStations(stationsCsv, diagnostics),
+    recoveredRows: stationsCsv.recoveredRows,
+    skippedStations: diagnostics.skippedStations,
+  };
+}
+
+export function parseMimitPricesResource(
+  pricesText: string,
+  stationIds: ReadonlySet<string>,
+): MimitPricesParseResult {
+  const pricesCsv = parseMimitCsv("prices", pricesText);
+  const diagnostics = emptyDiagnostics();
+
+  return {
+    extractionDate: pricesCsv.extractionDate,
+    prices: parsePrices(pricesCsv, stationIds, diagnostics),
+    recoveredRows: pricesCsv.recoveredRows,
+    skippedPrices: diagnostics.skippedPrices,
   };
 }
 
@@ -215,35 +258,36 @@ export function parseMimitDataset(input: {
   stationsText: string;
   pricesText: string;
 }): MimitDatasetParseResult {
-  const stationsCsv = parseMimitCsv("stations", input.stationsText);
-  const pricesCsv = parseMimitCsv("prices", input.pricesText);
+  const parsedStations = parseMimitStationsResource(input.stationsText);
+  const stationIds = new Set(parsedStations.stations.map(({ id }) => id));
+  const parsedPrices = parseMimitPricesResource(input.pricesText, stationIds);
 
-  if (stationsCsv.extractionDate !== pricesCsv.extractionDate) {
+  if (parsedStations.extractionDate !== parsedPrices.extractionDate) {
     throw new MimitCsvError(
       "invalid-extraction-date",
       "prices",
-      `MIMIT extraction dates do not match: stations=${stationsCsv.extractionDate}, prices=${pricesCsv.extractionDate}`,
+      `MIMIT extraction dates do not match: stations=${parsedStations.extractionDate}, prices=${parsedPrices.extractionDate}`,
     );
   }
 
-  const diagnostics = emptyDiagnostics();
-  diagnostics.recoveredRows = {
-    stations: stationsCsv.recoveredRows,
-    prices: pricesCsv.recoveredRows,
+  const diagnostics: MimitDatasetDiagnostics = {
+    recoveredRows: {
+      stations: parsedStations.recoveredRows,
+      prices: parsedPrices.recoveredRows,
+    },
+    skippedStations: parsedStations.skippedStations,
+    skippedPrices: parsedPrices.skippedPrices,
   };
-  const stations = parseStations(stationsCsv, diagnostics);
-  const stationIds = new Set(stations.map(({ id }) => id));
-  const prices = parsePrices(pricesCsv, stationIds, diagnostics);
 
   return {
     dataset: {
-      extractionDate: pricesCsv.extractionDate,
+      extractionDate: parsedPrices.extractionDate,
       metadata: {
-        stationsExtractionDate: stationsCsv.extractionDate,
-        pricesExtractionDate: pricesCsv.extractionDate,
+        stationsExtractionDate: parsedStations.extractionDate,
+        pricesExtractionDate: parsedPrices.extractionDate,
       },
-      stations,
-      prices,
+      stations: parsedStations.stations,
+      prices: parsedPrices.prices,
     },
     diagnostics,
   };

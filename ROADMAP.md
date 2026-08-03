@@ -16,6 +16,9 @@ Confirmed product decisions:
   fallback;
 - map and ranked list as the core experience;
 - latest official MIMIT daily dataset as the source of truth;
+- download prices daily, refresh the slower-moving station registry every 30
+  days or earlier only when price compatibility degrades materially;
+- retain only the active published dataset;
 - PWA installation is important, but follows the MVP;
 - white and sage-green visual direction, keeping the existing FuelRadar logo;
 - no analytics or non-essential cookies in the initial release.
@@ -39,8 +42,9 @@ MIMIT daily CSV files
         |
         v
 Vercel scheduled importer
-  - download both resources
-  - validate format and extraction date
+  - download daily prices
+  - refresh stations every 30 days or on compatibility anomaly
+  - validate formats and source dates
   - normalize stations and prices
   - stage and publish atomically
         |
@@ -71,11 +75,14 @@ Code boundaries:
 ## Dataset Rules
 
 - The price file extraction date identifies the published daily dataset.
-- Station and price resources must have the same extraction date.
+- A freshly downloaded station/price pair must have the same extraction date;
+  a reused validated station snapshot may predate the daily prices by up to the
+  30-day refresh interval.
 - A price can remain valid when `dtComu` predates the extraction date; it is the
   operator communication time, not an expiry date.
 - Unsupported fuels and invalid values are skipped with explicit diagnostics.
 - A failed import never replaces the last successful dataset.
+- A successful changed import leaves exactly one dataset.
 - The UI must expose dataset freshness without implying that every price was
   communicated on the extraction day.
 

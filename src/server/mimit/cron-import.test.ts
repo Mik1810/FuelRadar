@@ -5,9 +5,11 @@ import type { MimitDatasetMetadata } from "@/domain/mimit/source";
 import {
   getMimitCircuitFingerprint,
   getMimitMetadataFingerprint,
+  getMimitResourceMetadataFingerprint,
   IMPORT_LOCK_KEY,
   MimitImportClaimLostError,
   runMimitImport,
+  unavailablePricesRequireStationRefresh,
 } from "@/server/mimit/importer";
 import {
   classifyMimitCronDatabaseError,
@@ -140,6 +142,21 @@ function createFakeSql(options: FakeSqlOptions = {}) {
       ] as T;
     }
     if (
+      text.includes('stations_extraction_date::text as "stationsExtractionDate"')
+    ) {
+      if (!options.unchangedDatasetId) return [] as unknown as T;
+      const sourceMetadata = metadata("new");
+      sourceMetadata.stations.contentFingerprint = "station-content";
+      return [
+        {
+          id: options.unchangedDatasetId,
+          stationsExtractionDate: "2026-07-18",
+          stationCount: 1,
+          sourceMetadata,
+        },
+      ] as T;
+    }
+    if (
       text.includes("from fuelradar.datasets") &&
       text.includes("where is_active and metadata_fingerprint")
     ) {
@@ -215,6 +232,13 @@ function neverDownload() {
   };
 }
 
+function noDownloads() {
+  return {
+    downloadStations: neverDownload(),
+    downloadPrices: neverDownload(),
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((resolvePromise) => {
@@ -244,7 +268,7 @@ describe("MIMIT cron import", () => {
           metadataCalls += 1;
           return metadata("unused");
         },
-        downloadDataset: neverDownload(),
+        ...noDownloads(),
         isTransientFetchError: () => false,
       });
       throw new Error("Expected the cron import to fail.");
@@ -281,7 +305,7 @@ describe("MIMIT cron import", () => {
           metadataCalls += 1;
           return metadata("blocked");
         },
-        downloadDataset: neverDownload(),
+        ...noDownloads(),
         isTransientFetchError: () => false,
       });
 
@@ -317,7 +341,7 @@ describe("MIMIT cron import", () => {
       sql: stale.sql,
       now: () => claimedAt,
       fetchMetadata: async () => metadata("stale-reclaimed"),
-      downloadDataset: neverDownload(),
+      ...noDownloads(),
       isTransientFetchError: () => false,
     });
 
@@ -352,7 +376,7 @@ describe("MIMIT cron import", () => {
         metadataStarted.resolve();
         return metadataResult.promise;
       },
-      downloadDataset: neverDownload(),
+      ...noDownloads(),
       isTransientFetchError: () => false,
     });
     await metadataStarted.promise;
@@ -360,7 +384,7 @@ describe("MIMIT cron import", () => {
     const overlap = await runMimitCronImport({
       sql: fake.sql,
       fetchMetadata: async () => metadata("overlap"),
-      downloadDataset: neverDownload(),
+      ...noDownloads(),
       isTransientFetchError: () => false,
     });
     expect(overlap.reason).toBe("already-running");
@@ -375,7 +399,7 @@ describe("MIMIT cron import", () => {
     const after = await runMimitCronImport({
       sql: fake.sql,
       fetchMetadata: async () => metadata("after"),
-      downloadDataset: neverDownload(),
+      ...noDownloads(),
       isTransientFetchError: () => false,
     });
     expect(after).toMatchObject({ reason: "circuit-open", runId: "run-2" });
@@ -394,7 +418,7 @@ describe("MIMIT cron import", () => {
           metadataCalls += 1;
           return metadata("unused");
         },
-        downloadDataset: neverDownload(),
+        ...noDownloads(),
         isTransientFetchError: () => false,
       });
 
@@ -422,7 +446,7 @@ describe("MIMIT cron import", () => {
           attempts += 1;
           throw transientError;
         },
-        downloadDataset: neverDownload(),
+        ...noDownloads(),
         isTransientFetchError: (error) => error === transientError,
         sleep: async (milliseconds) => {
           sleeps.push(milliseconds);
@@ -454,7 +478,7 @@ describe("MIMIT cron import", () => {
           attempts += 1;
           throw permanentError;
         },
-        downloadDataset: neverDownload(),
+        ...noDownloads(),
         isTransientFetchError: () => false,
         sleep: async () => {
           sleeps += 1;
@@ -481,7 +505,11 @@ describe("MIMIT cron import", () => {
     const result = await runMimitCronImport({
       sql: fake.sql,
       fetchMetadata: async () => metadata("broken-version"),
-      downloadDataset: async () => {
+      downloadStations: async () => {
+        downloads += 1;
+        throw new Error("download should not be called");
+      },
+      downloadPrices: async () => {
         downloads += 1;
         throw new Error("download should not be called");
       },
@@ -515,7 +543,7 @@ describe("MIMIT cron import", () => {
     const oldResult = await runMimitCronImport({
       sql: fake.sql,
       fetchMetadata: async () => oldMetadata,
-      downloadDataset: neverDownload(),
+      ...noDownloads(),
       isTransientFetchError: () => false,
     });
     expect(oldResult.reason).toBe("circuit-open");
@@ -523,7 +551,7 @@ describe("MIMIT cron import", () => {
     const newResult = await runMimitCronImport({
       sql: fake.sql,
       fetchMetadata: async () => metadata("new"),
-      downloadDataset: neverDownload(),
+      ...noDownloads(),
       isTransientFetchError: () => false,
     });
     expect(newResult).toMatchObject({
@@ -949,7 +977,7 @@ describe("MIMIT database diagnostics", () => {
 describe("MIMIT metadata fingerprints", () => {
   test("uses the strong fingerprint when validators exist", () => {
     const versioned = metadata("v1");
-    const strong = getMimitMetadataFingerprint(versioned);
+    const strong = getMimitResourceMetadataFingerprint(versioned.prices);
 
     expect(strong).not.toBeNull();
     expect(getMimitCircuitFingerprint(versioned)).toBe(strong!);
@@ -965,6 +993,12 @@ describe("MIMIT metadata fingerprints", () => {
     expect(getMimitCircuitFingerprint(unversioned)).not.toBe(
       getMimitCircuitFingerprint(changed),
     );
+  });
+
+  test("refreshes stations only for a material unknown-price anomaly", () => {
+    expect(unavailablePricesRequireStationRefresh(9, 991)).toBeFalse();
+    expect(unavailablePricesRequireStationRefresh(10, 990)).toBeTrue();
+    expect(unavailablePricesRequireStationRefresh(100, 99_900)).toBeTrue();
   });
 });
 
@@ -984,7 +1018,11 @@ describe("MIMIT import claim fencing", () => {
         metadataCalls += 1;
         return metadata("blocked");
       },
-      downloadDataset: async () => {
+      downloadStations: async () => {
+        downloadCalls += 1;
+        throw new Error("download should not be called");
+      },
+      downloadPrices: async () => {
         downloadCalls += 1;
         throw new Error("download should not be called");
       },
@@ -1024,7 +1062,11 @@ describe("MIMIT import claim fencing", () => {
           startedAt: new Date("2026-07-18T12:00:00.000Z"),
         },
         fetchMetadata: async () => metadata("stale-worker"),
-        downloadDataset: async () => {
+        downloadStations: async () => {
+          downloads += 1;
+          throw new Error("download should not be called");
+        },
+        downloadPrices: async () => {
           downloads += 1;
           throw new Error("download should not be called");
         },
@@ -1066,19 +1108,17 @@ describe("MIMIT import claim fencing", () => {
           startedAt: new Date("2026-07-18T12:00:00.000Z"),
         },
         fetchMetadata: async () => metadata("activation-fence"),
-        downloadDataset: async () => ({
-          stations: {
-            name: "stations",
-            url: "https://example.test/stations.csv",
-            text: stationsText,
-            downloadedAt: "2026-07-18T12:00:01.000Z",
-          },
-          prices: {
-            name: "prices",
-            url: "https://example.test/prices.csv",
-            text: pricesText,
-            downloadedAt: "2026-07-18T12:00:01.000Z",
-          },
+        downloadStations: async () => ({
+          name: "stations",
+          url: "https://example.test/stations.csv",
+          text: stationsText,
+          downloadedAt: "2026-07-18T12:00:01.000Z",
+        }),
+        downloadPrices: async () => ({
+          name: "prices",
+          url: "https://example.test/prices.csv",
+          text: pricesText,
+          downloadedAt: "2026-07-18T12:00:01.000Z",
         }),
       }),
     ).rejects.toBeInstanceOf(MimitImportClaimLostError);

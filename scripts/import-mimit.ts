@@ -3,7 +3,8 @@ import postgres from "postgres";
 import { parseRuntimeEnv } from "@/config/server-env";
 import { runMimitCronImport } from "@/server/mimit/cron-import";
 import {
-  downloadMimitDataset,
+  downloadMimitPrices,
+  downloadMimitStations,
   fetchMimitDatasetMetadata,
   isTransientMimitFetchError,
 } from "@/server/mimit/source-client";
@@ -20,7 +21,8 @@ try {
   const result = await runMimitCronImport({
     sql,
     fetchMetadata: fetchMimitDatasetMetadata,
-    downloadDataset: downloadMimitDataset,
+    downloadStations: downloadMimitStations,
+    downloadPrices: downloadMimitPrices,
     isTransientFetchError: isTransientMimitFetchError,
   });
   console.info(JSON.stringify(result, null, 2));

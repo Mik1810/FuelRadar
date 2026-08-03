@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
 import { MimitCsvError } from "@/domain/mimit/csv";
-import { parseMimitDataset } from "@/domain/mimit/dataset";
+import {
+  parseMimitDataset,
+  parseMimitPricesResource,
+  parseMimitStationsResource,
+} from "@/domain/mimit/dataset";
 
 async function fixture(name: string): Promise<string> {
   return Bun.file(`${import.meta.dir}/__fixtures__/${name}`).text();
@@ -80,6 +84,24 @@ describe("parseMimitDataset", () => {
       expect(error).toBeInstanceOf(MimitCsvError);
       expect((error as MimitCsvError).message).toContain("do not match");
     }
+  });
+
+  test("parses daily prices against an older validated station snapshot", async () => {
+    const stations = parseMimitStationsResource(
+      await fixture("stations.valid.csv"),
+    );
+    const prices = parseMimitPricesResource(
+      (await fixture("prices.valid.csv")).replace(
+        "Estrazione del 2026-05-23",
+        "Estrazione del 2026-05-24",
+      ),
+      new Set(stations.stations.map(({ id }) => id)),
+    );
+
+    expect(stations.extractionDate).toBe("2026-05-23");
+    expect(prices.extractionDate).toBe("2026-05-24");
+    expect(prices.prices).toHaveLength(2);
+    expect(prices.skippedPrices.stationUnavailable).toBe(1);
   });
 
   test("skips station identifiers that cannot be used by detail URLs or favorites", () => {
