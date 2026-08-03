@@ -594,6 +594,17 @@ export async function runMimitImport(
         limit 1
       `;
       if (unchanged) {
+        await transaction`
+          update fuelradar.datasets
+          set source_etag = ${combinedHeader(effectiveMetadata, "etag")},
+              source_last_modified = ${combinedHeader(
+                effectiveMetadata,
+                "lastModified",
+              )},
+              metadata_fingerprint = ${metadataHash},
+              source_metadata = ${transaction.json(effectiveMetadata)}
+          where id = ${unchanged.id}::bigint and is_active
+        `;
         return finishSkippedRun({
           sql: transaction,
           runId: run.id,
