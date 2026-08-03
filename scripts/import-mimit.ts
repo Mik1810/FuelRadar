@@ -9,7 +9,7 @@ import {
   isTransientMimitFetchError,
 } from "@/server/mimit/source-client";
 
-const { DATABASE_URL } = parseRuntimeEnv(process.env);
+const { DATABASE_URL, MIMIT_RETENTION_ENABLED } = parseRuntimeEnv(process.env);
 const sql = postgres(DATABASE_URL.trim(), {
   prepare: false,
   max: 1,
@@ -24,6 +24,7 @@ try {
     downloadStations: downloadMimitStations,
     downloadPrices: downloadMimitPrices,
     isTransientFetchError: isTransientMimitFetchError,
+    pruneHistoricalDatasets: MIMIT_RETENTION_ENABLED,
   });
   console.info(JSON.stringify(result, null, 2));
 } catch (error) {

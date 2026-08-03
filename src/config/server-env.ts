@@ -12,6 +12,10 @@ const postgresUrl = z.string().url().superRefine((value, context) => {
 
 const runtimeEnvSchema = z.object({
   DATABASE_URL: postgresUrl,
+  MIMIT_RETENTION_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
 });
 
 const cronEnvSchema = z.object({

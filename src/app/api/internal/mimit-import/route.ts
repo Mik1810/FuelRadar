@@ -12,8 +12,9 @@ const handleImport = createMimitImportHandler({
   getSecret: () => parseCronEnv(process.env).CRON_SECRET,
   getDatabaseUrl: () => parseRuntimeEnv(process.env).DATABASE_URL,
   runImport: async () => {
+    let runtimeEnv: ReturnType<typeof parseRuntimeEnv>;
     try {
-      parseRuntimeEnv(process.env);
+      runtimeEnv = parseRuntimeEnv(process.env);
     } catch (error) {
       throw new MimitCronConfigurationError(error);
     }
@@ -21,7 +22,9 @@ const handleImport = createMimitImportHandler({
     const { runServerMimitCronImport } = await import(
       "@/server/mimit/cron-import-server"
     );
-    return runServerMimitCronImport();
+    return runServerMimitCronImport({
+      pruneHistoricalDatasets: runtimeEnv.MIMIT_RETENTION_ENABLED,
+    });
   },
   logger: console,
 });

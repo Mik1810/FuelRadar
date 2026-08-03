@@ -370,6 +370,7 @@ export type MimitCronDependencies = {
   isTransientFetchError: (error: unknown) => boolean;
   now?: () => Date;
   sleep?: (milliseconds: number) => Promise<void>;
+  pruneHistoricalDatasets?: boolean;
 };
 
 function delay(milliseconds: number): Promise<void> {
@@ -591,6 +592,7 @@ export async function runMimitCronImport(
         ),
       claimedRun: claim,
       now,
+      pruneHistoricalDatasets: dependencies.pruneHistoricalDatasets,
     });
   } catch (error) {
     if (claim && !importerStarted) {
