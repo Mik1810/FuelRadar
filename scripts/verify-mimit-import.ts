@@ -82,6 +82,35 @@ try {
   assert(first.stationCount === 1, "The valid station count is incorrect.");
   assert(first.priceCount === 2, "The valid price count is incorrect.");
 
+  await sql`
+    update fuelradar.datasets
+    set source_metadata = source_metadata #- ${["stations", "contentFingerprint"]}::text[]
+    where is_active
+  `;
+  const legacyBackfill = await runMimitImport({
+    sql,
+    now,
+    fetchMetadata: async () => metadata("v1"),
+    downloadStations: async () => {
+      downloads += 1;
+      return download(pricesText).stations;
+    },
+    downloadPrices: async () => download(pricesText).prices,
+  });
+  const [backfilled] = await sql<
+    { station_content_fingerprint: string | null }[]
+  >`
+    select source_metadata->'stations'->>'contentFingerprint'
+      as station_content_fingerprint
+    from fuelradar.datasets
+    where is_active
+  `;
+  assert(
+    legacyBackfill.reason === "content-unchanged" &&
+      Boolean(backfilled?.station_content_fingerprint),
+    "Unchanged legacy content did not backfill the station fingerprint.",
+  );
+
   const repeated = await runMimitImport({
     sql,
     now,
@@ -96,7 +125,7 @@ try {
     },
   });
   assert(repeated.status === "skipped", "Unchanged metadata was not skipped.");
-  assert(downloads === 1, "Unchanged metadata triggered another download.");
+  assert(downloads === 2, "Unchanged metadata triggered another download.");
 
   let unexpectedStationDownloads = 0;
   const dailyPrices = await runMimitImport({
@@ -329,7 +358,7 @@ try {
   assert(summary?.active_count === 1, "More than one dataset is active.");
   assert(summary.dataset_count === 1, "Retention left an inactive dataset behind.");
   assert(summary.succeeded === 5, "Unexpected successful run count.");
-  assert(summary.skipped === 2, "Unexpected skipped run count.");
+  assert(summary.skipped === 3, "Unexpected skipped run count.");
   assert(summary.failed === 4, "Unexpected failed run count.");
   assert(summary.detached_successes === 4, "Historical import runs were not detached.");
   assert(summary.orphan_prices === 0, "Retention left orphan prices.");
