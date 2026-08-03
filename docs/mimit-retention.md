@@ -6,9 +6,10 @@ Disable the Vercel cron first, wait until no import is `running`, and use a
 direct or session-mode PostgreSQL connection. Never put credentials in command
 arguments or logs.
 
-Keep the production `MIMIT_RETENTION_ENABLED` variable unset or `false` until
-the cleanup is approved. After the guarded cleanup succeeds, set it to `true`
-for Production and redeploy before re-enabling the cron.
+Before an initial cleanup, keep `MIMIT_RETENTION_ENABLED=false`. After the
+guarded cleanup succeeds, remove that override or set it to `true` and redeploy
+before re-enabling the cron. Retention is enabled by default in the approved
+production configuration.
 
 ## Backup and rehearsal
 
@@ -104,10 +105,10 @@ begin
   into dataset_count, active_count
   from fuelradar.datasets;
 
-  select station_count, price_count
+  select dataset.station_count, dataset.price_count
   into stored_station_count, stored_price_count
-  from fuelradar.datasets
-  where id = snapshot.active_id;
+  from fuelradar.datasets as dataset
+  where dataset.id = snapshot.active_id;
 
   select count(*) into station_count from fuelradar.stations;
   select count(*) into price_count from fuelradar.prices;

@@ -62,11 +62,9 @@ The one-time production cleanup and physical space recovery procedure is
 documented in `docs/mimit-retention.md` and must not be executed without an
 explicit maintenance approval.
 
-Production retention is guarded by `MIMIT_RETENTION_ENABLED`. It defaults to
-`false`, so deploying the code cannot delete historical remote snapshots by
-itself. Set it to `true` only after the backup rehearsal and explicit approval;
-leave it enabled afterward so each successful import retains only the active
-dataset.
+Production retention is enabled by default after the approved initial cleanup.
+`MIMIT_RETENTION_ENABLED=false` is an emergency-only pause: while disabled,
+successful imports retain inactive snapshots and database growth resumes.
 
 ## Manual relaunch and preview verification
 
